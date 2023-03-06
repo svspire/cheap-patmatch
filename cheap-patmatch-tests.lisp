@@ -33,33 +33,348 @@
 ;; OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-(patmatch  "(defun" `(:one ,(lambda (char) (char= #\( char))))
+; Look for a single opening paren
+(ppatmatch  "(defun" `(:one ,(lambda (char) (char= #\( char))))
+;; T    ; success, but nothing was captured. Sometimes that's exactly what you want.
+;; NIL
 
-(patmatch  "(defun" `(:capture opening
+; Look for a single opening paren and capture it with the name "OPENING"
+(ppatmatch  "(defun" `(:capture opening
                         (:one ,(lambda (char) (char= #\( char)))))
+;; T
+;; ((OPENING . "("))
 
-(patmatch "(ddefun" `((:one ,(lambda (char) (char= #\( char)))
+; Look for a single opening paren followed by a single 'd'
+(ppatmatch "(ddefun" `((:one ,(lambda (char) (char= #\( char)))
                      (:one ,(lambda (char) (char= #\d char)))))
+;; NIL  ; failure, because there are two d's and we specified one
+;; NIL
 
-(patmatch "( defun" `((:one ,(lambda (char) (char= #\( char)))
+; Look for a single opening paren followed by one space
+(ppatmatch "( defun" `((:one ,(lambda (char) (char= #\( char)))
                      (:one ,(lambda (char) (char= #\space char)))))
+;; T
+;; NIL
 
-(patmatch "(  defun" `((:one ,(lambda (char) (char= #\( char)))
+(ppatmatch "(  defun" `((:one ,(lambda (char) (char= #\( char)))
+                     (:one ,(lambda (char) (char= #\space char)))))
+;; NIL   ; failed because there are two spaces after the paren
+;; NIL
+
+(ppatmatch "(  defun" `((:one ,(lambda (char) (char= #\( char)))
                        (:zero-or-more whitep)
                        (:capture defform
                                     (:one-or-more non-whitep))
                        (:one-or-more whitep)
                        (:capture defname
-                                    (:one-or-more non-whitep)))) 
+                                    (:one-or-more non-whitep))))
+;; NIL   ; failed because we ran out of string before we ran out of pattern. But captures may still be useful.
+;; ((DEFFORM . "defun"))
+
+(ppatmatch "((  defun" `((:one ,(lambda (char) (char= #\( char)))
+                         (:zero-or-more whitep)
+                         (:capture defform
+                                   (:one-or-more non-whitep))
+                         (:one-or-more whitep)
+                         (:capture defname
+                                   (:one-or-more non-whitep))))
+;; NIL   ; failed because there are two opening parens
+;; NIL
+
+; Look for a typical pattern of a defconstant form, with comment following
+(ppatmatch "(defconstant foobar 35) ; compute foobars"
+           `((:one #\()
+             (:zero-or-more whitep)
+             (:capture defform
+                       (:one-or-more non-whitep))
+             (:one-or-more whitep)
+             (:capture defname
+                       (:one-or-more non-whitep))
+             (:one-or-more whitep)
+             (:capture value
+                       (:one-or-more ,(lambda (char)
+                                        (and (non-whitep char)
+                                             (not (char= #\) char))))))
+             (:zero-or-more whitep)
+             (:one #\))
+             (:zero-or-more whitep)
+             (:capture comment
+                       (:one-or-more any-char))))
+;; T
+;; ((DEFFORM . "defconstant") (DEFNAME . "foobar") (VALUE . "35") (COMMENT . "; compute foobars"))
+
+; Try and handle docstrings
+(ppatmatch "(defconstant foobar 35) ; compute foobars"
+           `((:one #\()
+             (:zero-or-more whitep)
+             (:capture defform
+                       (:one-or-more non-whitep))
+             (:one-or-more whitep)
+             (:capture defname
+                       (:one-or-more non-whitep))
+             (:one-or-more whitep)
+             (:capture value
+                       (:one-or-more ,(lambda (char)
+                                        (and (non-whitep char)
+                                             (not (char= #\) char))))))
+             (:zero-or-more whitep)
+             (:or (:capture docstring
+                            (:one #\")
+                            (:zero-or-more any-char)
+                            (:one #\"))
+                  (:one #\)))
+             (:zero-or-more whitep)
+             (:capture comment
+                       (:one-or-more any-char))))
+;; T  ;  Good. Still works on original pattern and doesn't capture docstring because there isn't one.
+;; ((DEFFORM . "defconstant") (DEFNAME . "foobar") (VALUE . "35") (COMMENT . "; compute foobars"))
 
 
-(patmatch "(defconstant foobar 35) ; compute foobars"
+(ppatmatch "(defconstant foobar 35 ) ; compute foobars"
+           `((:one #\()
+             (:zero-or-more whitep)
+             (:capture defform
+                       (:one-or-more non-whitep))
+             (:one-or-more whitep)
+             (:capture defname
+                       (:one-or-more non-whitep))
+             (:one-or-more whitep)
+             (:capture value
+                       (:one-or-more ,(lambda (char)
+                                        (and (non-whitep char)
+                                             (not (char= #\) char))))))
+             (:zero-or-more whitep)
+             (:or (:capture docstring
+                            (:one #\")
+                            (:zero-or-more any-char)
+                            (:one #\"))
+                  (:one #\)))
+             (:zero-or-more whitep)
+             (:capture comment
+                       (:one-or-more any-char))))
+;; T   ; Still works if there are spaces before the close paren
+;; ((DEFFORM . "defconstant") (DEFNAME . "foobar") (VALUE . "35") (COMMENT . "; compute foobars"))
+
+(ppatmatch "(defconstant foobar 35 \"my docstring\") ; compute foobars"
+           `((:one #\()
+             (:zero-or-more whitep)
+             (:capture defform
+                       (:one-or-more non-whitep))
+             (:one-or-more whitep)
+             (:capture defname
+                       (:one-or-more non-whitep))
+             (:one-or-more whitep)
+             (:capture value
+                       (:one-or-more ,(lambda (char)
+                                        (and (non-whitep char)
+                                             (not (char= #\) char))))))
+             (:zero-or-more whitep)
+             (:or (:capture docstring
+                            (:one #\")
+                            (:zero-or-more any-char)
+                            (:one #\"))
+                  (:one #\)))
+             (:zero-or-more whitep)
+             (:capture comment
+                       (:one-or-more any-char))))
+;; NIL    ; OOPS! Failed because (:zero-or-more any-char) was grabbing the last #\"
+;; ((DEFFORM . "defconstant") (DEFNAME . "foobar") (VALUE . "35"))
+
+; Now it handles docstrings
+(ppatmatch "(defconstant foobar 35 \"my docstring\") ; compute foobars"
+           `((:one #\()
+             (:zero-or-more whitep)
+             (:capture defform
+                       (:one-or-more non-whitep))
+             (:one-or-more whitep)
+             (:capture defname
+                       (:one-or-more non-whitep))
+             (:one-or-more whitep)
+             (:capture value
+                       (:one-or-more ,(lambda (char)
+                                        (and (non-whitep char)
+                                             (not (char= #\) char))))))
+             (:zero-or-more whitep)
+             (:or (:capture docstring
+                            (:one #\")
+                            (:zero-or-more ,(lambda (char) (not (char= #\" char))))
+                            (:one #\"))
+                  (:one #\)))
+             (:zero-or-more whitep)
+             (:capture comment
+                       (:one-or-more any-char))))
+;; T    ; Now it works! But it's still not quite right because final closing paren is included in comment
+;; ((DEFFORM . "defconstant") (DEFNAME . "foobar") (VALUE . "35") (DOCSTRING . "\"my docstring\"") (COMMENT . ") ; compute foobars"))
+
+; Fix the above by using an explicit :SEQ inside the :OR
+(ppatmatch "(defconstant foobar 35 \"my docstring\") ; compute foobars"
+           `((:one #\()
+             (:zero-or-more whitep)
+             (:capture defform
+                       (:one-or-more non-whitep))
+             (:one-or-more whitep)
+             (:capture defname
+                       (:one-or-more non-whitep))
+             (:one-or-more whitep)
+             (:capture value
+                       (:one-or-more ,(lambda (char)
+                                        (and (non-whitep char)
+                                             (not (char= #\) char))))))
+             (:zero-or-more whitep)
+             (:or (:seq (:capture docstring
+                            (:one #\")
+                            (:zero-or-more ,(lambda (char) (not (char= #\" char))))
+                            (:one #\"))
+                        (:zero-or-more whitep)
+                        (:one #\)))
+                  (:one #\)))
+             (:zero-or-more whitep)
+             (:capture comment
+                       (:one-or-more any-char))))
+;; T    ; Fixed! Note the comment doesn't contain the closing paren any more
+;; ((DEFFORM . "defconstant") (DEFNAME . "foobar") (VALUE . "35") (DOCSTRING . "\"my docstring\"") (COMMENT . "; compute foobars"))
+
+
+
+
+(ppatmatch "  " `(:one-or-more whitep))
+;; T
+;; NIL
+
+; Detect definition symbols at beginning of an sexp.
+;  (Don't use this in real life because it won't keep track of matched parens in body.)
+(ppatmatch "(defun foobar 35) ; process the foobars"
+          `((:one #\()
+            (:zero-or-more whitep)
+            (:capture defform
+                         (:string "def")
+                         (:one-or-more non-whitep))
+            (:capture body
+                         (:one-or-more ,(lambda (char)
+                                               (not (char= #\) char)))))))
+;; T
+;; ((DEFFORM . "defun") (BODY . " foobar 35"))
+
+; Like above but we don't have to spell out the keyword :string. This way is nicer.
+(ppatmatch "(defun foobar 35) ; process the foobars"
+          `((:one #\()
+            (:zero-or-more whitep)
+            (:capture defform
+                         "def"
+                         (:one-or-more non-whitep))
+            (:capture body
+                         (:one-or-more ,(lambda (char)
+                                               (not (char= #\) char)))))))
+;; T
+;; ((DEFFORM . "defun") (BODY . " foobar 35"))
+           
+; Now search for any defining form EXCEPT "defun"
+(ppatmatch "(defun foobar 35) ; process the foobars"
+          `((:one #\()
+            (:zero-or-more whitep)
+            (:capture defform
+                         (:and "def" ; note nice lookahead
+                               (:not "defun"))
+                         (:one-or-more non-whitep))
+            (:capture body
+                         (:one-or-more ,(lambda (char)
+                                               (not (char= #\) char)))))))
+;; NIL  ; failure because it's "defun"
+;; NIL
+
+(ppatmatch "(defu"
+          `((:one #\()
+            (:zero-or-more whitep)
+            (:capture defform
+                         (:and "def" ; note nice lookahead
+                               (:not "defun"))
+                         (:one-or-more non-whitep))
+            (:capture body
+                         (:one-or-more ,(lambda (char)
+                                               (not (char= #\) char)))))))
+;; NIL   ; Failed because we ran out of string before we ran out of pattern. But note the defform part succeeded.
+;; ((DEFFORM . "defu")) ; Lesson: Even overall failure of the pattern can still partially succeed and be useful.
+
+(ppatmatch "(defu"
+          `((:one #\()
+            (:zero-or-more whitep)
+            (:capture defform
+                         (:and "def" ; note nice lookahead
+                               (:not "defun"))
+                         (:one-or-more non-whitep))))
+;; T    ; Success because we shortened the pattern. Now the overall pattern can succeed.
+;; ((DEFFORM . "defu"))
+
+(ppatmatch "(defconstant foobar 35) ; process the foobars"
+          `((:one #\()
+            (:zero-or-more whitep)
+            (:capture defform
+                         (:and "def"
+                               (:not "defun"))
+                         (:one-or-more non-whitep))
+            (:capture body
+                         (:one-or-more ,(lambda (char)
+                                               (not (char= #\) char)))))))
+;; T
+;; ((DEFFORM . "defconstant") (BODY . " foobar 35"))
+
+(ppatmatch "(defconstant foobar 35) ; process the foobars"
+          `("defmacro"))
+;; NIL   ; Failed because we were looking for "defmacro"
+;; NIL
+
+(ppatmatch "(defconstant foobar 35) ; process the foobars"
+          `("defconstant"))
+;; NIL   ; Failed because we(didn't include an opening paren in the pattern
+;; NIL
+
+(ppatmatch "(defconstant foobar 35) ; process the foobars"
+          `("(defconstant"))
+;; T
+;; NIL
+
+(ppatmatch "(defconstant foobar 35) ; process the foobars"
+          `(:capture defform
+                        "(defconstant"))
+;; T
+;; ((DEFFORM . "(defconstant"))
+
+(ppatmatch "dabcdef"
+          `(:capture match
+                        (:one "abcd")
+                        (:zero-or-more any-char)))
+;; NIL
+;; NIL
+
+(ppatmatch "zdabcdef"
+          `(:capture match
+                        (:one "xyz")
+                        (:zero-or-more any-char)))
+;; T
+;; ((MATCH . "zxdabcdef"))
+
+(ppatmatch "zxdabcdef"
+          `(:capture match
+                        (:one-or-more "xyz")
+                        (:zero-or-more any-char)))
+;; T
+;; ((MATCH . "zxdabcdef"))
+
+(ppatmatch "zxdabcdef"
+          `(:capture nil ; anonymous capture
+                        (:one-or-more "xyz")
+                        (:zero-or-more any-char)))
+;; T
+;; ("zxdabcdef")
+
+;; Demonstrates what happens if you mix named and anonymous captures. 
+(ppatmatch "(defconstant foobar 35) ; compute foobars"
           `((:one #\()
             (:zero-or-more whitep)
             (:capture defform
                          (:one-or-more non-whitep))
             (:one-or-more whitep)
-            (:capture defname
+            (:capture nil ; anonymous
                          (:one-or-more non-whitep))
             (:one-or-more whitep)
             (:capture value
@@ -71,93 +386,5 @@
             (:zero-or-more whitep)
             (:capture comment
                          (:one-or-more any-char))))
-
-(patmatch "  " `(:one-or-more whitep))
-
-
-; Detect definition symbols at beginning of an sexp.
-;  (Don't use this in real life because it won't keep track of matched parens in body.)
-(patmatch "(defun foobar 35) ; keep track of foobars"
-          `((:one #\()
-            (:zero-or-more whitep)
-            (:capture defform
-                         (:string "def")
-                         (:one-or-more non-whitep))
-            (:capture body
-                         (:one-or-more ,(lambda (char)
-                                               (not (char= #\) char)))))))
-
-; Like above but you don't have to say :string
-(patmatch "(defun foobar 35) ; keep track of foobars"
-          `((:one #\()
-            (:zero-or-more whitep)
-            (:capture defform
-                         "def"
-                         (:one-or-more non-whitep))
-            (:capture body
-                         (:one-or-more ,(lambda (char)
-                                               (not (char= #\) char)))))))
-
-           
-; Now search for any defining form EXCEPT "defun"
-(patmatch "(defun foobar 35) ; keep track of foobars"
-          `((:one #\()
-            (:zero-or-more whitep)
-            (:capture defform
-                         (:and "def"
-                               (:not "defun"))
-                         (:one-or-more non-whitep))
-            (:capture body
-                         (:one-or-more ,(lambda (char)
-                                               (not (char= #\) char)))))))
-; --> fail
-
-(patmatch "(defconstant foobar 35) ; keep track of foobars"
-          `((:one #\()
-            (:zero-or-more whitep)
-            (:capture defform
-                         (:and "def"
-                               (:not "defun"))
-                         (:one-or-more non-whitep))
-            (:capture body
-                         (:one-or-more ,(lambda (char)
-                                               (not (char= #\) char)))))))
-; --> success
-
-(patmatch "(defconstant foobar 35) ; keep track of foobars"
-          `("defmacro"))
-; --> fail
-
-(patmatch "(defconstant foobar 35) ; keep track of foobars"
-          `("defconstant"))
-; --> fail (didn't include opening paren)
-
-(patmatch "(defconstant foobar 35) ; keep track of foobars"
-          `("(defconstant"))
-
-; --> succeed (but we didn't capture anything so this is only useful if we need to know it succeeded)
-
-
-(patmatch "(defconstant foobar 35) ; keep track of foobars"
-          `(:capture defform
-                        "(defconstant"))
-
-(patmatch "dabcdef"
-          `(:capture match
-                        (:one "abcd")
-                        (:zero-or-more any-char)))
-; --> fail
-
-(patmatch "zdabcdef"
-          `(:capture match
-                        (:one "xyz")
-                        (:zero-or-more any-char)))
-
-; --> success
-
-(patmatch "zxdabcdef"
-          `(:capture match
-                        (:one-or-more "xyz")
-                        (:zero-or-more any-char)))
-
-; --> success
+;; T
+;; ((DEFFORM . "defconstant") "foobar" (VALUE . "35") (COMMENT . "; compute foobars"))

@@ -41,13 +41,18 @@
 ;;;  2. A numeric position within the string where the match happened, or where it failed as may be the case.
 ;;;  3. A captured, named substring that was matched in the string.
 
+;;; In this system, #'patmatch takes two arguments: a string and a pattern to match the string against.
+;;;    It returns a success/failure boolean and a state object, which contains the original string,
+;;;    the offset (position) within the string where the pattern succeeded or failed, and a list of 
+;;;    captures (if any) that were found within the string.
+
 (in-package :cl-user)
 
 (defclass state ()
   ((pos :initarg :pos :initform nil :accessor get-pos)
    (string :initarg :string :initform nil :accessor get-string)
    (len :initarg :len :initform nil :accessor get-string-length)
-   (matchstrings :initarg :matchstrings :initform nil :accessor get-matchstrings
+   (captures :initarg :captures :initform nil :accessor get-captures
                  :documentation "An alist of strings collected with :capture forms.")))
 
 (defmethod copy-state ((self state) &optional newpos)
@@ -55,7 +60,7 @@
     :pos (or newpos (get-pos self))
     :string (get-string self)
     :len (get-string-length self)
-    :matchstrings (get-matchstrings self)))
+    :captures (get-captures self)))
 
 (defmethod incf-pos ((self state))
   (let ((newstate (copy-state self)))
@@ -108,7 +113,7 @@
     Fn is a predicate of one argument: a character.
     Fn can also be
       -- A character itself
-      -- A string, which means 'any of the characters in this string will satisfy the predicate'
+      -- A string, which means 'any of the characters in this string will satisfy the predicate'. Case-sensitive only for now.
     Returns (values t updated-state) on success.
     (values nil updated-state) on failure."))
 
@@ -141,7 +146,7 @@
                                   (funcall fn (char string pos))))
                  (values t (copy-state state pos)))
                (values t state)))
-          (t (values t state))))) ; we're out of string but for this pattern it means success
+          (t (values t state))))) ; we're out of string prematurely but for _this_ pattern it means success!
 
 (defmethod primitive-pattern-dispatch ((kwd (eql :one-or-more)) fn state)
   "Require at least one character at current position for which fn returns true."
@@ -178,25 +183,26 @@
                        (values nil state)) ; no need to make a new state here. Initial pos is where it failed.
                    (values t (copy-state state pos))) ; no next character at all. This means success.
                 (values nil state))) ; first character didn't match
-               
           (t (values nil state))))) ; we're out of string but not out of pattern. This means failure.
 
 #|
 These are the meta-pattern keywords:
 :seq -- Perform pattern clauses in order.
-        Each updates position and matchstrings before proceeding to next clause.
+        Each updates position and captures before proceeding to next clause.
         If any clause fails, overall pattern fails.
-        (The literal :seq keyword is not required or expected; :seq is implied unless another meta-pattern keyword leads pattern)
+        (The literal :seq keyword is not usually required except to create a sequential pattern inside
+         another meta-pattern keyword like :and, :or, or :not.
+         In all other cases :seq is implied.)
 
 :not -- Only a single pattern clause should follow.
         If that clause fails, overall clause succeeds, and vice-versa.
 
 :or  -- Perform pattern clauses in order.
-        Each starts at same position as previous, and updates matchstrings where appropriate.
+        Each starts at same string position as previous, and updates captures where appropriate.
         If any clause succeeds, overall pattern succeeds.
 
 :and -- Perform pattern clauses in order.
-        Each starts at same position as previous, and updates matchstrings where appropriate.
+        Each starts at same string position as previous, and updates captures where appropriate.
         If any clause fails, overall pattern fails.
 
 :break -- Throws a (break). Useful for debugging. Breaks always succeed, so continuing after the break just continues.
@@ -205,68 +211,73 @@ These are the meta-pattern keywords:
 |#
 
 (defun inner-patmatch (state pattern)
-  (if pattern
-      (if (stringp pattern)
-          ; syntactic sugar so pattern can be a string to be matched literally
-          (primitive-pattern-dispatch :string pattern state)
-          (let ((carpat (car pattern)))
-            (cond ((keywordp carpat)
-                   ; check for meta-pattern keywords and handle them first. Meta-patterns contain other patterns.
-                   (case carpat
-                     (:capture
-                      ; second must be a symbol or string to name the capture group
-                      ; cddr is assumed to be a sequential meta-pattern
-                      (let ((capture-name (second pattern)))
-                        (unless (and capture-name
-                                     (or (symbolp capture-name)
-                                         (stringp capture-name)))
-                          (error "Improper or no capture name found: ~S" capture-name))
+  (flet ((do-sequentially (state pattern)
+           (multiple-value-bind (success? newstate)
+                                (inner-patmatch state (car pattern))
+             (if success?
+                 (inner-patmatch newstate (cdr pattern))
+                 (values nil newstate)))))
+    (if pattern
+        (if (stringp pattern)
+            ; syntactic sugar so pattern can be a string to be matched literally
+            (primitive-pattern-dispatch :string pattern state)
+            (let ((carpat (car pattern)))
+              (cond ((keywordp carpat)
+                     ; check for meta-pattern keywords and handle them first. Meta-patterns contain other patterns.
+                     (case carpat
+                       (:seq
+                         (do-sequentially state (cdr pattern)))
+                       (:capture
+                        ; second must be a symbol or string to name the capture group
+                        ; cddr is assumed to be a sequential meta-pattern
+                        (let ((capture-name (second pattern)))
+                          (unless (or (symbolp capture-name)
+                                      (stringp capture-name))
+                            (error "Improper capture name found: ~S" capture-name))
+                          (multiple-value-bind (success? newstate)
+                                               (inner-patmatch state (cddr pattern))
+                            (cond (success?
+                                   ;; Record the match on newstate and return it.
+                                   ;; Callee cannot do this because it don't know about the :capture clause it's within
+                                   (let ((string-found (subseq (get-string newstate)
+                                                               (get-pos state)
+                                                               (get-pos newstate))))
+                                     (push (if capture-name
+                                               (cons capture-name string-found)
+                                               string-found) ; capture name is explicitly nil (anonymous)
+                                           (get-captures newstate))
+                                     (values t newstate)))
+                                  (t (values nil newstate))))))
+                       
+                       (:not ; should contain only a single subpattern
                         (multiple-value-bind (success? newstate)
-                                             (inner-patmatch state (cddr pattern))
-                          (cond (success?
-                                 ;; Record the match on newstate and return it.
-                                 ;; Callee cannot do this because it don't know about the :capture clause it's within
-                                 (push (cons capture-name
-                                             (subseq (get-string newstate)
-                                                     (get-pos state)
-                                                     (get-pos newstate)))
-                                       (get-matchstrings newstate))
-                                 (values t newstate))
-                                (t (values nil newstate))))))
-                     
-                     (:not ; should contain only a single subpattern
-                      (multiple-value-bind (success? newstate)
                                              (inner-patmatch state (second pattern))
-                        (if success?
-                            (values nil state)
-                            (values t newstate))))
-
-                     (:or ; cdr of pattern will be evaluated in sequence but each evaluation starts at the same position
-                      ; Any success wins immediately.
-                      (some-match state (cdr pattern)))
-                     
-                     (:and ; cdr of pattern will be evaluated in sequence but each evaluation starts at the same position
-                      ; Any failure loses immediately.
-                      (every-match state (cdr pattern)))
-                     
-                     (:break (break) ; just for debugging patterns
-                             (values :break state)) ; break always succeeds so we'll go to the next thing
-                     
-                     (t ; any other keyword indicates a primitive pattern
-                      (primitive-pattern-dispatch carpat
-                                                  (second pattern) ; fn
-                                                  state))))
-                  
-                  
-                  (t ; treat pattern as a set of sequential subpatterns
-                   (multiple-value-bind (success? newstate)
-                                        (inner-patmatch state (car pattern))
-                     (if success?
-                         (inner-patmatch newstate (cdr pattern))
-                         (values nil newstate)))))))
-      
-      ; pattern is empty. This is success.
-      (values t state)))
+                          (if success?
+                              (values nil state)
+                              (values t newstate))))
+                       
+                       (:or ; cdr of pattern will be evaluated in sequence but each evaluation starts at the same position
+                        ; Any success wins immediately.
+                        (some-match state (cdr pattern)))
+                       
+                       (:and ; cdr of pattern will be evaluated in sequence but each evaluation starts at the same position
+                        ; Any failure loses immediately.
+                        (every-match state (cdr pattern)))
+                       
+                       (:break (break) ; just for debugging patterns
+                               (values :break state)) ; break always succeeds so we'll go to the next thing
+                       
+                       (t ; any other keyword indicates a primitive pattern
+                        (primitive-pattern-dispatch carpat
+                                                    (second pattern) ; fn
+                                                    state))))
+                    
+                    (t ; treat pattern as a set of sequential subpatterns
+                     (do-sequentially state pattern)
+                     ))))
+        
+        ; pattern is empty. This is success.
+        (values t state))))
 
 (defun patmatch (string pattern)
   "Returns (values t state) on success.
@@ -276,6 +287,23 @@ These are the meta-pattern keywords:
                    :string string
                    :len (length string))))
     (inner-patmatch state pattern)))
+
+(defun ppatmatch (string pattern)
+  "Pretty version patmatch. This is the primary user interface if all you care about
+   is whether the match succeeded and what the captures were.
+   (If you care about the position within the string where the match succeeded or failed, 
+   use #'patmatch and examine the returned state object.)
+   Returns (values t captures) on success.
+  (values nil captures) on failure."
+  (let ((state (make-instance 'state
+                   :pos 0
+                   :string string
+                   :len (length string))))
+    (multiple-value-bind (success? newstate)
+                         (inner-patmatch state pattern)
+      (values success?
+              ; reverse captures to reflect true order in which they were found
+              (reverse (get-captures newstate))))))
 
 (defun whitep (char)
   (member char '(#\Space #\Tab #\Return #\Linefeed)))
