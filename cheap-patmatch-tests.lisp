@@ -35,7 +35,7 @@
 
 (patmatch  "(defun" `(:one ,(lambda (char) (char= #\( char))))
 
-(patmatch  "(defun" `(:collecting opening
+(patmatch  "(defun" `(:capture opening
                         (:one ,(lambda (char) (char= #\( char)))))
 
 (patmatch "(ddefun" `((:one ,(lambda (char) (char= #\( char)))
@@ -46,30 +46,30 @@
 
 (patmatch "(  defun" `((:one ,(lambda (char) (char= #\( char)))
                        (:zero-or-more whitep)
-                       (:collecting defform
+                       (:capture defform
                                     (:one-or-more non-whitep))
                        (:one-or-more whitep)
-                       (:collecting defname
+                       (:capture defname
                                     (:one-or-more non-whitep)))) 
 
 
 (patmatch "(defconstant foobar 35) ; compute foobars"
           `((:one #\()
             (:zero-or-more whitep)
-            (:collecting defform
+            (:capture defform
                          (:one-or-more non-whitep))
             (:one-or-more whitep)
-            (:collecting defname
+            (:capture defname
                          (:one-or-more non-whitep))
             (:one-or-more whitep)
-            (:collecting value
+            (:capture value
                          (:one-or-more ,(lambda (char)
                                           (and (non-whitep char)
                                                (not (char= #\) char))))))
             (:zero-or-more whitep)
             (:one #\))
             (:zero-or-more whitep)
-            (:collecting comment
+            (:capture comment
                          (:one-or-more any-char))))
 
 (patmatch "  " `(:one-or-more whitep))
@@ -80,10 +80,10 @@
 (patmatch "(defun foobar 35) ; keep track of foobars"
           `((:one #\()
             (:zero-or-more whitep)
-            (:collecting defform
+            (:capture defform
                          (:string "def")
                          (:one-or-more non-whitep))
-            (:collecting body
+            (:capture body
                          (:one-or-more ,(lambda (char)
                                                (not (char= #\) char)))))))
 
@@ -91,10 +91,10 @@
 (patmatch "(defun foobar 35) ; keep track of foobars"
           `((:one #\()
             (:zero-or-more whitep)
-            (:collecting defform
+            (:capture defform
                          "def"
                          (:one-or-more non-whitep))
-            (:collecting body
+            (:capture body
                          (:one-or-more ,(lambda (char)
                                                (not (char= #\) char)))))))
 
@@ -103,11 +103,11 @@
 (patmatch "(defun foobar 35) ; keep track of foobars"
           `((:one #\()
             (:zero-or-more whitep)
-            (:collecting defform
+            (:capture defform
                          (:and "def"
                                (:not "defun"))
                          (:one-or-more non-whitep))
-            (:collecting body
+            (:capture body
                          (:one-or-more ,(lambda (char)
                                                (not (char= #\) char)))))))
 ; --> fail
@@ -115,11 +115,11 @@
 (patmatch "(defconstant foobar 35) ; keep track of foobars"
           `((:one #\()
             (:zero-or-more whitep)
-            (:collecting defform
+            (:capture defform
                          (:and "def"
                                (:not "defun"))
                          (:one-or-more non-whitep))
-            (:collecting body
+            (:capture body
                          (:one-or-more ,(lambda (char)
                                                (not (char= #\) char)))))))
 ; --> success
@@ -139,5 +139,25 @@
 
 
 (patmatch "(defconstant foobar 35) ; keep track of foobars"
-          `(:collecting defform
+          `(:capture defform
                         "(defconstant"))
+
+(patmatch "dabcdef"
+          `(:capture match
+                        (:one "abcd")
+                        (:zero-or-more any-char)))
+; --> fail
+
+(patmatch "zdabcdef"
+          `(:capture match
+                        (:one "xyz")
+                        (:zero-or-more any-char)))
+
+; --> success
+
+(patmatch "zxdabcdef"
+          `(:capture match
+                        (:one-or-more "xyz")
+                        (:zero-or-more any-char)))
+
+; --> success

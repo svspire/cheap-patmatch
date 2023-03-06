@@ -48,7 +48,7 @@
    (string :initarg :string :initform nil :accessor get-string)
    (len :initarg :len :initform nil :accessor get-string-length)
    (matchstrings :initarg :matchstrings :initform nil :accessor get-matchstrings
-                 :documentation "An alist of strings collected with :collecting forms.")))
+                 :documentation "An alist of strings collected with :capture forms.")))
 
 (defmethod copy-state ((self state) &optional newpos)
   (make-instance 'state
@@ -95,6 +95,7 @@
    If arg is a string, return a function that matches any character in that string, case-sensitively."
   (typecase arg
     (function arg)
+    (symbol arg) ; assume it represents a function
     (character (lambda (char) (char= char arg)))
     (string (lambda (char) (find char arg :test #'char=)))
     ))
@@ -127,6 +128,7 @@
 
 (defmethod primitive-pattern-dispatch ((kwd (eql :zero-or-more)) fn state)
   "Require at zero or more characters at current position for which fn returns true."
+  (setf fn (massage-arg-into-fn fn))
   (let ((pos (get-pos state))
         (string (get-string state))
         (len (get-string-length state)))
@@ -143,6 +145,7 @@
 
 (defmethod primitive-pattern-dispatch ((kwd (eql :one-or-more)) fn state)
   "Require at least one character at current position for which fn returns true."
+  (setf fn (massage-arg-into-fn fn))
   (let ((pos (get-pos state))
         (string (get-string state))
         (len (get-string-length state)))
@@ -210,20 +213,20 @@ These are the meta-pattern keywords:
             (cond ((keywordp carpat)
                    ; check for meta-pattern keywords and handle them first. Meta-patterns contain other patterns.
                    (case carpat
-                     (:collecting
-                      ; second must be a symbol or string to name the collection
+                     (:capture
+                      ; second must be a symbol or string to name the capture group
                       ; cddr is assumed to be a sequential meta-pattern
-                      (let ((collection-name (second pattern)))
-                        (unless (and collection-name
-                                     (or (symbolp collection-name)
-                                         (stringp collection-name)))
-                          (error "Improper or no collection name found: ~S" collection-name))
+                      (let ((capture-name (second pattern)))
+                        (unless (and capture-name
+                                     (or (symbolp capture-name)
+                                         (stringp capture-name)))
+                          (error "Improper or no capture name found: ~S" capture-name))
                         (multiple-value-bind (success? newstate)
                                              (inner-patmatch state (cddr pattern))
                           (cond (success?
                                  ;; Record the match on newstate and return it.
-                                 ;; Callee cannot do this because it don't know about the :collecting clause it's within
-                                 (push (cons collection-name
+                                 ;; Callee cannot do this because it don't know about the :capture clause it's within
+                                 (push (cons capture-name
                                              (subseq (get-string newstate)
                                                      (get-pos state)
                                                      (get-pos newstate)))
