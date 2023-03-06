@@ -1,6 +1,13 @@
 ;;; cheap-patmatch.lisp
 ;;; 05-Mar-2023 SVS
 
+;;; I'm sick of trying to understand 17 different flavors of regular expressions.
+;;; I'm sick of regular expressions that are write-only.
+;;; I'm sick of regular expressions that intermix the desire for
+;;;  1. A single binary result of whether a match happened
+;;;  2. A numeric position within the string where the match happened, or where it failed as may be the case.
+;;;  3. A captured, named substring that was matched in the string.
+
 (in-package :cl-user)
 
 (defclass state ()
@@ -98,7 +105,7 @@ Three cases:
                  (loop while (and (< (incf pos) len)
                                   (funcall fn (char string pos))))
                  (values t (copy-state state pos)))
-               (values nil (incf-pos state))))
+               (values nil state))) ; not even first char matched
           (t (values nil state))))) ; we're out of string but not out of pattern. This means failure.
 
 (defmethod keyword-dispatch ((kwd (eql :one)) fn state)
@@ -204,7 +211,7 @@ Three cases:
                                    (:one-or-more non-whitep))
                        (:one-or-more whitep)
                        (:collecting defname
-                                   (:one-or-more non-whitep))))
+                                   (:one-or-more non-whitep)))) ;;; NDY not working right yet
 
 
 (patmatch "(defun foobar 35) ; keep track of foobars"
@@ -220,7 +227,7 @@ Three cases:
                          (:one-or-more non-whitep))
             (:one-or-more whitep)
             (:one ,(lambda (char) (char= #\) char)))
-            ;(:zero-or-more whitep)
+            (:zero-or-more whitep)
             (:collecting comment
                          (:one-or-more anything))))
 
