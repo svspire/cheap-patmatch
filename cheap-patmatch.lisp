@@ -1,9 +1,42 @@
 ;;; cheap-patmatch.lisp
 ;;; 05-Mar-2023 SVS
 
+;; Copyright (c) 2023, Shannon Spires
+;; All rights reserved.
+
+;; Redistribution and use in source and binary forms, with or without
+;; modification, are permitted provided that the following conditions are
+;; met:
+
+;;   * Redistributions of source code must retain the above copyright
+;;     notice, this list of conditions and the following disclaimer.
+
+;;   * Redistributions in binary form must reproduce the above copyright
+;;     notice, this list of conditions and the following disclaimer in
+;;     the documentation and/or other materials provided with the
+;;     distribution.
+
+;;   * Neither Shannon Spires nor the names of its contributors of the
+;;     software may be used to endorse or promote products derived from
+;;     this software without specific prior written permission.
+
+;; THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;; "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+;; LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+;; A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+;; HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+;; SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+;; LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+;; DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+;; THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+;; (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+;; OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
 ;;; I'm sick of trying to understand 17 different flavors of regular expressions.
-;;; I'm sick of regular expressions that are write-only.
-;;; I'm sick of regular expressions that intermix the desire for
+;;; I'm sick of regular expressions that are write-only. I don't care if the regex is verbose; I
+;;;    just want it to be understandable by me tomorrow.
+;;; I'm sick of regular expressions that confuse and intermix the desire for
 ;;;  1. A single binary result of whether a match happened
 ;;;  2. A numeric position within the string where the match happened, or where it failed as may be the case.
 ;;;  3. A captured, named substring that was matched in the string.
@@ -57,7 +90,6 @@ Three cases:
           (values t newstate)
           (some-match state (cdr pattern))))
     (values nil state)))
-
 
 (defun every-match (state pattern)
   "Like #'every but expects fn to return two values: A boolean and a second value which is the actual result.
@@ -129,8 +161,6 @@ Three cases:
           (t (values nil state))))) ; we're out of string but not out of pattern. This means failure.
 
 (defun inner-patmatch (state pattern)
-  "Returns (values t state) on success.
-   (values nil state) on failure."
   (if pattern
       (let ((carpat (car pattern)))
         (cond ((keywordp carpat)
@@ -162,6 +192,9 @@ Three cases:
                  (:and ; cdr of pattern will be evaluated in sequence but each evaluation starts at the same position
                   (every-match state (cdr pattern)))
                  
+                 (:break (break)
+                         (values t state)) ; break always succeeds so we'll go to the next thing
+                 
                  (t ; any other keyword indicates a character-by-character predicate
                   (keyword-dispatch carpat
                                     (second pattern) ; fn
@@ -174,11 +207,13 @@ Three cases:
                  (if success?
                      (inner-patmatch newstate (cdr pattern))
                      (values nil newstate))))))
-
+      
       ; pattern is empty. This is success.
       (values t state)))
 
 (defun patmatch (string pattern)
+  "Returns (values t state) on success.
+  (values nil state) on failure."
   (let ((state (make-instance 'state
                    :pos 0
                    :string string
@@ -194,65 +229,4 @@ Three cases:
 (defun anything (char)
   t)
 
-(patmatch  "(defun" `(:one ,(lambda (char) (char= #\( char))))
 
-(patmatch  "(defun" `(:collecting opening
-                        (:one ,(lambda (char) (char= #\( char)))))
-
-(patmatch "(ddefun" `((:one ,(lambda (char) (char= #\( char)))
-                     (:one ,(lambda (char) (char= #\d char)))))
-
-(patmatch "( defun" `((:one ,(lambda (char) (char= #\( char)))
-                     (:one ,(lambda (char) (char= #\space char)))))
-
-(patmatch "(  defun" `((:one ,(lambda (char) (char= #\( char)))
-                      (:zero-or-more whitep)
-                      (:collecting defform
-                                   (:one-or-more non-whitep))
-                       (:one-or-more whitep)
-                       (:collecting defname
-                                   (:one-or-more non-whitep)))) ;;; NDY not working right yet
-
-
-(patmatch "(defun foobar 35) ; keep track of foobars"
-          `((:one ,(lambda (char) (char= #\( char)))
-            (:zero-or-more whitep)
-            (:collecting defform
-                         (:one-or-more non-whitep))
-            (:one-or-more whitep)
-            (:collecting defname
-                         (:one-or-more non-whitep))
-            (:one-or-more whitep)
-            (:collecting value
-                         (:one-or-more non-whitep))
-            (:one-or-more whitep)
-            (:one ,(lambda (char) (char= #\) char)))
-            (:zero-or-more whitep)
-            (:collecting comment
-                         (:one-or-more anything))))
-
-(patmatch "  " `(:one-or-more whitep))
-
-#|
-Pattern: We need for string to be
-
-(:one #\()
-(:zero-or-more #'whitep)
-(:collecting ':defword
-  (:one-or-more #'non-whitep))
-(:one-or-more #'whitep)
-(:collecting ':constant-name
-  (:one-or-more #'non-whitep))
-(:one-or-more #'whitep)
-(:collecting ':value
-  (:one-or-more (lambda (char)
-                 (and (non-whitep char)
-                      (char/= #\))))))
-(:one #\))
-(:zero-or-more #'whitespacep)
-(:collecting comment
-             :zero-or-more #'anything))
-
-    
-
-|#
