@@ -36,6 +36,7 @@
 ;;; I'm sick of trying to understand 17 different flavors of regular expressions.
 ;;; I'm sick of regular expressions that are write-only. I don't care if the regex is verbose; I
 ;;;    just want it to be understandable by me tomorrow.
+;;; I don't particularly care if the regex matcher is as fast as possible; clarity trumps speed.
 ;;; I'm sick of regular expressions that confuse and intermix the desire for
 ;;;  1. A single binary result of whether a match happened
 ;;;  2. A numeric position within the string where the match happened, or where it failed as may be the case.
@@ -45,6 +46,10 @@
 ;;;    It returns a success/failure boolean and a state object, which contains the original string,
 ;;;    the offset (position) within the string where the pattern succeeded or failed, and a list of 
 ;;;    captures (if any) that were found within the string.
+
+;;; See tests for examples.
+;;; See #'primitive-pattern-dispatch methods for primitive matching keywords and how they work.
+;;; Meta-pattern keywords are :seq, :or, :and, :not, and :break.
 
 (in-package :cl-user)
 
@@ -56,6 +61,9 @@
                  :documentation "An alist of strings collected with :capture forms.")))
 
 (defmethod copy-state ((self state) &optional newpos)
+  "Copy a state object, optionally updating its pos slot. We use this quite a bit but
+   note that it doesn't cons much because this is Common Lisp; it's not actually copying the contents
+   of the slots that contain the most data (string and captures)."
   (make-instance 'state
     :pos (or newpos (get-pos self))
     :string (get-string self)
@@ -67,12 +75,11 @@
     (incf (get-pos newstate))
     newstate))
   
-
 (defun some-match (state pattern)
   "Like #'some but expects fn to return two values: A boolean and a second value which is the actual result.
   Decision whether to proceed is made on the first value.
   Overall value returned is (values t result) or (values nil result). So that's the key difference from
-  #'some: We always return a result."
+  #'some: We always return a result as a second value."
   (if (car pattern)
     (multiple-value-bind (success? newstate)
                          (inner-patmatch state (car pattern))
@@ -85,7 +92,9 @@
 
 (defun every-match (state pattern)
   "Like #'every but expects fn to return two values: A boolean and a second value which is the actual result.
-  Decision whether to proceed is made on the first value."
+  Decision whether to proceed is made on the first value.
+  Overall value returned is (values t result) or (values nil result). So that's the key difference from
+  #'every: We always return a result as a second value."
   (if (car pattern)
     (multiple-value-bind (success? newstate)
                          (inner-patmatch state (car pattern))
@@ -96,7 +105,7 @@
 
 (defun massage-arg-into-fn (arg)
   "If arg is a function, just return it.
-   If arg is a character, change it into a function that matches that character.
+   If arg is a character, return a function that matches that character.
    If arg is a string, return a function that matches any character in that string, case-sensitively."
   (typecase arg
     (function arg)
@@ -212,6 +221,7 @@ These are the meta-pattern keywords:
 
 (defun inner-patmatch (state pattern)
   (flet ((do-sequentially (state pattern)
+           ; Execute car and cdr in sequence, with each seeing a (potentially) updated position in the string
            (multiple-value-bind (success? newstate)
                                 (inner-patmatch state (car pattern))
              (if success?
@@ -237,19 +247,21 @@ These are the meta-pattern keywords:
                           (multiple-value-bind (success? newstate)
                                                (inner-patmatch state (cddr pattern))
                             (cond (success?
-                                   ;; Record the match on newstate and return it.
-                                   ;; Callee cannot do this because it don't know about the :capture clause it's within
-                                   (let ((string-found (subseq (get-string newstate)
+                                   ;; Record the match on newstate and return newstate.
+                                   ;; Callee cannot do this because it don't know about the :capture clause it's within.
+                                   (let ((string-found (subseq (get-string newstate) ;; <-- Here's the magic. Study this and understand it.
                                                                (get-pos state)
                                                                (get-pos newstate))))
                                      (push (if capture-name
                                                (cons capture-name string-found)
-                                               string-found) ; capture name is explicitly nil (anonymous)
+                                               string-found) ; capture name is explicitly nil (anonymous). So push just the string, not a cons.
                                            (get-captures newstate))
                                      (values t newstate)))
-                                  (t (values nil newstate))))))
+                                  (t (values nil newstate)))))) ; we already know newstate represents a failed match,
+                                                                ; but it contains potentially-valuable position
+                                                                ; and capture information, so return it.
                        
-                       (:not ; should contain only a single subpattern
+                       (:not ; should contain only a single subpattern (which could itself be wrapped in another meta-pattern keyword).
                         (multiple-value-bind (success? newstate)
                                              (inner-patmatch state (second pattern))
                           (if success?
@@ -272,7 +284,7 @@ These are the meta-pattern keywords:
                                                     (second pattern) ; fn
                                                     state))))
                     
-                    (t ; treat pattern as a set of sequential subpatterns
+                    (t ; No opening keyword, so treat pattern as if it opened with :SEQ.
                      (do-sequentially state pattern)
                      ))))
         
