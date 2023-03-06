@@ -53,8 +53,8 @@
                                     (:one-or-more non-whitep)))) 
 
 
-(patmatch "(defun foobar 35) ; keep track of foobars"
-          `((:one ,(lambda (char) (char= #\( char)))
+(patmatch "(defconstant foobar 35) ; compute foobars"
+          `((:one #\()
             (:zero-or-more whitep)
             (:collecting defform
                          (:one-or-more non-whitep))
@@ -67,9 +67,77 @@
                                           (and (non-whitep char)
                                                (not (char= #\) char))))))
             (:zero-or-more whitep)
-            (:one ,(lambda (char) (char= #\) char)))
+            (:one #\))
             (:zero-or-more whitep)
             (:collecting comment
-                         (:one-or-more anything))))
+                         (:one-or-more any-char))))
 
 (patmatch "  " `(:one-or-more whitep))
+
+
+; Detect definition symbols at beginning of an sexp.
+;  (Don't use this in real life because it won't keep track of matched parens in body.)
+(patmatch "(defun foobar 35) ; keep track of foobars"
+          `((:one #\()
+            (:zero-or-more whitep)
+            (:collecting defform
+                         (:string "def")
+                         (:one-or-more non-whitep))
+            (:collecting body
+                         (:one-or-more ,(lambda (char)
+                                               (not (char= #\) char)))))))
+
+; Like above but you don't have to say :string
+(patmatch "(defun foobar 35) ; keep track of foobars"
+          `((:one #\()
+            (:zero-or-more whitep)
+            (:collecting defform
+                         "def"
+                         (:one-or-more non-whitep))
+            (:collecting body
+                         (:one-or-more ,(lambda (char)
+                                               (not (char= #\) char)))))))
+
+           
+; Now search for any defining form EXCEPT "defun"
+(patmatch "(defun foobar 35) ; keep track of foobars"
+          `((:one #\()
+            (:zero-or-more whitep)
+            (:collecting defform
+                         (:and "def"
+                               (:not "defun"))
+                         (:one-or-more non-whitep))
+            (:collecting body
+                         (:one-or-more ,(lambda (char)
+                                               (not (char= #\) char)))))))
+; --> fail
+
+(patmatch "(defconstant foobar 35) ; keep track of foobars"
+          `((:one #\()
+            (:zero-or-more whitep)
+            (:collecting defform
+                         (:and "def"
+                               (:not "defun"))
+                         (:one-or-more non-whitep))
+            (:collecting body
+                         (:one-or-more ,(lambda (char)
+                                               (not (char= #\) char)))))))
+; --> success
+
+(patmatch "(defconstant foobar 35) ; keep track of foobars"
+          `("defmacro"))
+; --> fail
+
+(patmatch "(defconstant foobar 35) ; keep track of foobars"
+          `("defconstant"))
+; --> fail (didn't include opening paren)
+
+(patmatch "(defconstant foobar 35) ; keep track of foobars"
+          `("(defconstant"))
+
+; --> succeed (but we didn't capture anything so this is only useful if we need to know it succeeded)
+
+
+(patmatch "(defconstant foobar 35) ; keep track of foobars"
+          `(:collecting defform
+                        "(defconstant"))
