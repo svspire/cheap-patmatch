@@ -51,7 +51,7 @@
 ;;; See #'primitive-pattern-dispatch methods for primitive matching keywords and how they work.
 ;;; Meta-pattern keywords are :seq, :or, :and, :not, and :break.
 
-(in-package :cl-user)
+(in-package :cheap-patmatch)
 
 (defclass state ()
   ((pos :initarg :pos :initform nil :accessor get-pos)

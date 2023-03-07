@@ -32,6 +32,7 @@
 ;; (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 ;; OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+(in-package :cheap-patmatch)
 
 ; Look for a single opening paren
 (ppatmatch  "(defun" `(:one ,(lambda (char) (char= #\( char))))
@@ -58,7 +59,7 @@
 
 (ppatmatch "(  defun" `((:one ,(lambda (char) (char= #\( char)))
                      (:one ,(lambda (char) (char= #\space char)))))
-;; NIL   ; failed because there are two spaces after the paren
+;; NIL   ; fails because there are two spaces after the paren
 ;; NIL
 
 (ppatmatch "(  defun" `((:one ,(lambda (char) (char= #\( char)))
@@ -68,7 +69,7 @@
                        (:one-or-more whitep)
                        (:capture defname
                                     (:one-or-more non-whitep))))
-;; NIL   ; failed because we ran out of string before we ran out of pattern. But captures may still be useful.
+;; NIL   ; fails because we ran out of string before we ran out of pattern. But captures may still be useful.
 ;; ((DEFFORM . "defun"))
 
 (ppatmatch "((  defun" `((:one ,(lambda (char) (char= #\( char)))
@@ -78,7 +79,7 @@
                          (:one-or-more whitep)
                          (:capture defname
                                    (:one-or-more non-whitep))))
-;; NIL   ; failed because there are two opening parens
+;; NIL   ; fails because there are two opening parens
 ;; NIL
 
 ; Look for a typical pattern of a defconstant form, with comment following
@@ -177,7 +178,7 @@
              (:zero-or-more whitep)
              (:capture comment
                        (:one-or-more any-char))))
-;; NIL    ; OOPS! Failed because (:zero-or-more any-char) was grabbing the last #\"
+;; NIL    ; OOPS! Fails because (:zero-or-more any-char) was grabbing the last #\"
 ;; ((DEFFORM . "defconstant") (DEFNAME . "foobar") (VALUE . "35"))
 
 ; Now it handles docstrings
@@ -328,7 +329,7 @@ In this case "zero or more occurrences of any character but foo" means
             (:capture body
                          (:one-or-more ,(lambda (char)
                                                (not (char= #\) char)))))))
-;; NIL   ; Failed because we ran out of string before we ran out of pattern. But note the defform part succeeded.
+;; NIL   ; Fails because we ran out of string before we ran out of pattern. But note the defform part succeeded.
 ;; ((DEFFORM . "defu")) ; Lesson: Even overall failure of the pattern can still partially succeed and be useful.
 
 (ppatmatch "(defu"
@@ -356,12 +357,12 @@ In this case "zero or more occurrences of any character but foo" means
 
 (ppatmatch "(defconstant foobar 35) ; process the foobars"
           `("defmacro"))
-;; NIL   ; Failed because we were looking for "defmacro"
+;; NIL   ; Fails because we were looking for "defmacro"
 ;; NIL
 
 (ppatmatch "(defconstant foobar 35) ; process the foobars"
           `("defconstant"))
-;; NIL   ; Failed because we(didn't include an opening paren in the pattern
+;; NIL   ; Fails because we(didn't include an opening paren in the pattern
 ;; NIL
 
 (ppatmatch "(defconstant foobar 35) ; process the foobars"
