@@ -82,7 +82,7 @@
 ;; NIL   ; fails because there are two opening parens
 ;; NIL
 
-; Look for a typical pattern of a defconstant form, with comment following
+; Look for a typical pattern of a simple defconstant form, with comment following
 (ppatmatch "(defconstant foobar 35) ; compute foobars"
            `((:one #\()
              (:zero-or-more whitep)
@@ -362,7 +362,7 @@ In this case "zero or more occurrences of any character but foo" means
 
 (ppatmatch "(defconstant foobar 35) ; process the foobars"
           `("defconstant"))
-;; NIL   ; Fails because we(didn't include an opening paren in the pattern
+;; NIL   ; Fails because we didn't include an opening paren in the pattern
 ;; NIL
 
 (ppatmatch "(defconstant foobar 35) ; process the foobars"
@@ -388,7 +388,7 @@ In this case "zero or more occurrences of any character but foo" means
                         (:one "xyz")
                         (:zero-or-more any-char)))
 ;; T
-;; ((MATCH . "zxdabcdef"))
+;; ((MATCH . "zdabcdef"))
 
 (ppatmatch "zxdabcdef"
           `(:capture match
