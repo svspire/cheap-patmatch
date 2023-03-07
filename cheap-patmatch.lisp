@@ -203,6 +203,13 @@ These are the meta-pattern keywords:
          another meta-pattern keyword like :and, :or, or :not.
          In all other cases :seq is implied.)
 
+:capture name -- Perform pattern clauses in order.
+        This is identical to :seq except if all the pattern clauses result in a successful match, the substring
+        that matches will be pushed onto the captures list of the state object, and #'ppatmatch will return them.
+        name can be a string or a non-NIL symbol in which case that name will be consed to the matching string before
+        being pushed on the captures list so you can find it quickly.
+        name can also be NIL, in which case the matching string will be pushed 'naked' onto the captures list.
+
 :not -- Only a single pattern clause should follow.
         If that clause fails, overall clause succeeds, and vice-versa.
 
@@ -318,15 +325,31 @@ These are the meta-pattern keywords:
               (reverse (get-captures newstate))))))
 
 (defun whitep (char)
+  "Only whitespace chars will match."
   (member char '(#\Space #\Tab #\Return #\Linefeed)))
 
 ;;; CL functions alpha-char-p, alphanumericp, digit-char-p, graphic-char-p, standard-char-p are all also available here.
 
 (defun non-whitep (char)
+  "Only non-whitespace chars will match."
   (not (whitep char)))
 
 (defun any-char (char)
+  "Any character will match."
   (declare (ignore char))
   t)
+
+(defun any-char-but (char-bag)
+  "This one's a little different than the above -- this _returns_ a predicate you
+  can use to exclude a character or set of characters.
+  char-bag can be a list of chars, a string, or a single character."
+  (when (characterp char-bag)
+    (setf char-bag (string char-bag)))
+  (complement
+   (typecase char-bag
+     (string (lambda (char)
+               (find char char-bag)))
+     (cons (lambda (char)
+             (member char char-bag))))))
 
 

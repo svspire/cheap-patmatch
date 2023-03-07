@@ -234,8 +234,44 @@
 ;; T    ; Fixed! Note the comment doesn't contain the closing paren any more
 ;; ((DEFFORM . "defconstant") (DEFNAME . "foobar") (VALUE . "35") (DOCSTRING . "\"my docstring\"") (COMMENT . "; compute foobars"))
 
+; Improve the above with less clumsy syntax for dealing with the closing quote (see comment)
+(ppatmatch "(defconstant foobar 35 \"my docstring\") ; compute foobars"
+           `((:one #\()
+             (:zero-or-more whitep)
+             (:capture defform
+                       (:one-or-more non-whitep))
+             (:one-or-more whitep)
+             (:capture defname
+                       (:one-or-more non-whitep))
+             (:one-or-more whitep)
+             (:capture value
+                       (:one-or-more ,(lambda (char)
+                                        (and (non-whitep char)
+                                             (not (char= #\) char))))))
+             (:zero-or-more whitep)
+             (:or (:seq (:capture docstring
+                            (:one #\")
+                            (:zero-or-more ,(any-char-but #\")) ; <-- easier syntax than above*
+                            (:one #\"))
+                        (:zero-or-more whitep)
+                        (:one #\)))
+                  (:one #\)))
+             (:zero-or-more whitep)
+             (:capture comment
+                       (:one-or-more any-char))))
+;; T
+;; ((DEFFORM . "defconstant") (DEFNAME . "foobar") (VALUE . "35") (DOCSTRING . "\"my docstring\"") (COMMENT . "; compute foobars"))
 
 
+#|
+*Note: Here's where things start to get a bit weird with regexes, at least for me.
+What exactly does "zero or more occurrences of any character but foo" actually mean?
+One way to think about it is to start with a character set with all the characters but foo.
+Let's say foo is "DEFG".
+Then all the characters but those might be "ABCHIJKLMNOPQRSTUVWXYZ1234567890" [ignoring lowercase, punctuation, etc for this example]
+In this case "zero or more occurrences of any character but foo" means
+'zero or more occurrences of "ABCHIJKLMNOPQRSTUVWXYZ1234567890"'
+|#
 
 (ppatmatch "  " `(:one-or-more whitep))
 ;; T
