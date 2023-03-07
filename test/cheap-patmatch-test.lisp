@@ -297,7 +297,176 @@
   '(T
     ((DEFFORM . "defconstant") (DEFNAME . "foobar") (VALUE . "35") (DOCSTRING . "\"my docstring\"") (COMMENT . "; compute foobars"))))
 
+(deftest basic-whitespace
+         "  "
+  `(:one-or-more whitep)
+  '(T
+    NIL))
+
+; Detect definition symbols at beginning of an sexp.
+;  (Don't use this in real life because it won't keep track of matched parens in body.)
+(deftest definition-symbols1
+         "(defun foobar 35) ; process the foobars"
+  `((:one #\()
+    (:zero-or-more whitep)
+    (:capture defform
+              (:string "def")
+              (:one-or-more non-whitep))
+    (:capture body
+              (:one-or-more ,(lambda (char)
+                               (not (char= #\) char))))))
+  '( T
+    ((DEFFORM . "defun") (BODY . " foobar 35"))))
+
+; Like above but we don't have to spell out the keyword :string. This way is nicer.
+(deftest definition-symbols2
+         "(defun foobar 35) ; process the foobars"
+  `((:one #\()
+    (:zero-or-more whitep)
+    (:capture defform
+              "def"
+              (:one-or-more non-whitep))
+    (:capture body
+              (:one-or-more ,(lambda (char)
+                               (not (char= #\) char))))))
+  '(T
+    ((DEFFORM . "defun") (BODY . " foobar 35"))))
+
+; Now search for any defining form EXCEPT "defun"
+(deftest definition-symbols3
+         "(defun foobar 35) ; process the foobars"
+  `((:one #\()
+    (:zero-or-more whitep)
+    (:capture defform
+              (:and "def" ; note nice lookahead
+                    (:not "defun"))
+              (:one-or-more non-whitep))
+    (:capture body
+              (:one-or-more ,(lambda (char)
+                               (not (char= #\) char))))))
+  '(NIL  ; failure because it's "defun"
+    NIL))
+
+(deftest too-short-string1
+         "(defu"
+  `((:one #\()
+    (:zero-or-more whitep)
+    (:capture defform
+              (:and "def" ; note nice lookahead
+                    (:not "defun"))
+              (:one-or-more non-whitep))
+    (:capture body
+              (:one-or-more ,(lambda (char)
+                               (not (char= #\) char))))))
+  '(NIL   ; Fails because we ran out of string before we ran out of pattern. But note the defform part succeeded.
+    ((DEFFORM . "defu")) ; Lesson: Even overall failure of the pattern can still partially succeed and be useful.
+    ))
+
+(deftest too-short-string2
+         "(defu"
+  `((:one #\()
+    (:zero-or-more whitep)
+    (:capture defform
+              (:and "def" ; note nice lookahead
+                    (:not "defun"))
+              (:one-or-more non-whitep)))
+  '(T    ; Success because we shortened the pattern. Now the overall pattern can succeed.
+    ((DEFFORM . "defu"))))
+
+(deftest def&body
+         "(defconstant foobar 35) ; process the foobars"
+  `((:one #\()
+    (:zero-or-more whitep)
+    (:capture defform
+              (:and "def"
+                    (:not "defun"))
+              (:one-or-more non-whitep))
+    (:capture body
+              (:one-or-more ,(lambda (char)
+                               (not (char= #\) char))))))
+  '(T
+    ((DEFFORM . "defconstant") (BODY . " foobar 35"))))
+
+(deftest defmacro1
+         "(defconstant foobar 35) ; process the foobars"
+  `("defmacro")
+  '(NIL   ; Fails because we were looking for "defmacro"
+    NIL))
+
+(deftest no-opening-paren
+         "(defconstant foobar 35) ; process the foobars"
+  `("defconstant")
+  '( NIL   ; Fails because we didn't include an opening paren in the pattern
+    NIL))
+
+(deftest defconstant-match
+         "(defconstant foobar 35) ; process the foobars"
+  `("(defconstant")
+  '(T
+    NIL))
+
+(deftest defconstant-capture
+         "(defconstant foobar 35) ; process the foobars"
+  `(:capture defform
+             "(defconstant")
+  '(T
+    ((DEFFORM . "(defconstant"))))
+
+(deftest dabcdef
+         "dabcdef"
+  `(:capture match
+             (:one "abcd")
+             (:zero-or-more any-char))
+  '(NIL
+    NIL))
+
+(deftest zdabcdef
+         "zdabcdef"
+  `(:capture match
+             (:one "xyz")
+             (:zero-or-more any-char))
+  '(T
+    ((MATCH . "zdabcdef"))))
+
+(deftest zxdabcdef
+         "zxdabcdef"
+  `(:capture match
+             (:one-or-more "xyz")
+             (:zero-or-more any-char))
+  '(T
+    ((MATCH . "zxdabcdef"))))
+
+(deftest zxdabcdef-anonymous
+         "zxdabcdef"
+  `(:capture nil ; anonymous capture
+             (:one-or-more "xyz")
+             (:zero-or-more any-char))
+  '(T
+    ("zxdabcdef")))
+
+(deftest named-plus-anonymous
+         "(defconstant foobar 35) ; compute foobars"
+  `((:one #\()
+    (:zero-or-more whitep)
+    (:capture defform
+              (:one-or-more non-whitep))
+    (:one-or-more whitep)
+    (:capture nil ; anonymous
+              (:one-or-more non-whitep))
+    (:one-or-more whitep)
+    (:capture value
+              (:one-or-more ,(lambda (char)
+                               (and (non-whitep char)
+                                    (not (char= #\) char))))))
+    (:zero-or-more whitep)
+    (:one #\))
+    (:zero-or-more whitep)
+    (:capture comment
+              (:one-or-more any-char)))
+  '(T
+    ((DEFFORM . "defconstant") "foobar" (VALUE . "35") (COMMENT . "; compute foobars"))))
 
 
 
 ; (lisp-unit:run-tests :all :cheap-patmatch)
+; (let ((lisp-unit::*use-debugger* t)) (lisp-unit:run-tests :all :cheap-patmatch))
