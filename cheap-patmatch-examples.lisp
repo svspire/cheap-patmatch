@@ -425,3 +425,69 @@ In this case "zero or more occurrences of any character but foo" means
                          (:one-or-more any-char))))
 ;; T
 ;; ((DEFFORM . "defconstant") "foobar" (VALUE . "35") (COMMENT . "; compute foobars"))
+
+
+;;; ---- Recursive paren matching inside the value spot
+
+(defparameter *balanced-paren-matcher*
+  `(:capture nil
+             (:one-nongreedy #\()
+             (:named paren-matcher ; paren-matcher starts AFTER #\(
+                     (:zero-or-more ,(any-char-but "()"))
+                     (:or (:one-nongreedy #\))
+                          (:seq (:one-nongreedy #\()
+                                paren-matcher
+                                (:zero-or-more ,(any-char-but ")"))
+                                (:one-nongreedy #\)))))))
+
+(defparameter crap
+  `(:capture nil
+             (:named paren-matcher
+                     (:one-nongreedy #\()
+                     (:zero-or-more ,(any-char-but #\)))
+                     (:one-nongreedy #\)))))
+
+           
+(ppatmatch ")" `(:capture nil
+                         (:one-nongreedy #\))))
+
+(ppatmatch "((x y z))" *balanced-paren-matcher*)
+(ppatmatch "((x y z) (foo) )" *balanced-paren-matcher*)
+
+
+(ppatmatch "(xadfqw()x" crap)
+
+(ppatmatch "bar" *balanced-paren-matcher*)
+
+(ppatmatch "(((x" 
+           `(:capture nil
+                      (:one-nongreedy #\()
+                      (:one-nongreedy #\()
+                      (:one-nongreedy #\()
+                      (:one-nongreedy #\x)))
+
+
+(ppatmatch "(defconstant foobar 35 \"my docstring\") ; compute foobars"
+           `((:one #\()
+             (:zero-or-more whitep)
+             (:capture defform
+                       (:one-or-more non-whitep))
+             (:one-or-more whitep)
+             (:capture defname
+                       (:one-or-more non-whitep))
+             (:one-or-more whitep)
+             (:capture value
+                       (:one-or-more ,(lambda (char)
+                                        (and (non-whitep char)
+                                             (not (char= #\) char))))))
+             (:zero-or-more whitep)
+             (:or (:seq (:capture docstring
+                            (:one #\")
+                            (:zero-or-more ,(any-char-but #\")) ; <-- easier syntax than above*
+                            (:one #\"))
+                        (:zero-or-more whitep)
+                        (:one #\)))
+                  (:one #\)))
+             (:zero-or-more whitep)
+             (:capture comment
+                       (:one-or-more any-char))))
