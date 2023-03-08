@@ -80,31 +80,31 @@
     (incf (get-pos newstate))
     newstate))
   
-(defun some-match (state pattern)
+(defun some-match (state pattern binding-scope)
   "Like #'some but expects fn to return two values: A boolean and a second value which is the actual result.
   Decision whether to proceed is made on the first value.
   Overall value returned is (values t result) or (values nil result). So that's the key difference from
   #'some: We always return a result as a second value."
   (if (car pattern)
     (multiple-value-bind (success? newstate)
-                         (inner-patmatch state (car pattern))
+                         (inner-patmatch state (car pattern) binding-scope)
       (if success?
           (if (eql :break success?) ;; don't let :break short-circuit an :or
-              (some-match state (cdr pattern))
+              (some-match state (cdr pattern) binding-scope)
               (values t newstate))
-          (some-match state (cdr pattern))))
+          (some-match state (cdr pattern) binding-scope)))
     (values nil state)))
 
-(defun every-match (state pattern)
+(defun every-match (state pattern binding-scope)
   "Like #'every but expects fn to return two values: A boolean and a second value which is the actual result.
   Decision whether to proceed is made on the first value.
   Overall value returned is (values t result) or (values nil result). So that's the key difference from
   #'every: We always return a result as a second value."
   (if (car pattern)
     (multiple-value-bind (success? newstate)
-                         (inner-patmatch state (car pattern))
+                         (inner-patmatch state (car pattern) binding-scope)
       (if success?
-          (every-match state (cdr pattern))
+          (every-match state (cdr pattern) binding-scope)
           (values nil newstate)))
     (values t state)))
 
@@ -273,100 +273,110 @@ These are the meta-pattern keywords:
         (setf local-table (make-pattern-binding-scope-table))) ;; don't cons up a table unless we actually need one
     (setf (gethash key local-table) newvalue)))
 
-(defvar *current-scope* nil "Binding scope for named patterns.")
+(defun new-binding-scope (bs)
+  "Always returns a new binding scope whose parent is bs, which could either be another binding-scope or nil."
+  (make-instance 'pattern-binding-scope
+    :parent-scope bs))
 
-(defun inner-patmatch (state pattern)
-  (let ((*current-scope* (make-instance 'pattern-binding-scope ; yes this conses unnecessarily. Fix it later.
-                           :parent-scope *current-scope*)))
-    (declare (special *current-scope*))
-    (flet ((do-sequentially (state pattern)
-             ; Execute car and cdr in sequence, with each seeing a (potentially) updated position in the string
-             (multiple-value-bind (success? newstate)
-                                  (inner-patmatch state (car pattern))
-               (if success?
-                   (inner-patmatch newstate (cdr pattern))
-                   (values nil newstate)))))
-      (if pattern
-          (cond ((stringp pattern)
-                 ; syntactic sugar so pattern can be a string to be matched literally
-                 (primitive-pattern-dispatch :string pattern state))
-                ((symbolp pattern) ; it's a named pattern
-                 (format t "~%looking up pattern named ~S" pattern)
-                 (let ((named-pattern (lookup-key pattern *current-scope*)))
-                   (if named-pattern
-                       (inner-patmatch state named-pattern)
-                       (error "Pattern named ~A not in scope" pattern))))
-                ((consp pattern)
-                 (let ((carpat (car pattern)))
-                   (cond ((keywordp carpat)
-                          ; check for meta-pattern keywords and handle them first. Meta-patterns contain other patterns.
-                          (case carpat
-                            (:seq
-                             (do-sequentially state (cdr pattern)))
-                            
-                            (:named ; A named pattern. Useful for recursive patterns.
-                             (let ((pattern-name (second pattern)))
-                               (unless (and pattern-name
-                                            (symbolp pattern-name))
-                                 (error "Improper pattern name found: ~S. Must be a non-nil symbol." pattern-name))
-                               (format t "~%Found new named pattern ~S" pattern-name)
-                               (setf (lookup-key pattern-name *current-scope*) (cddr pattern))
-                               (inner-patmatch state (cddr pattern))))
-                            
-                            (:capture
-                             ; second must be a symbol or string to name the capture group
-                             ; cddr is assumed to be a sequential meta-pattern
-                             (let ((capture-name (second pattern)))
-                               (unless (or (symbolp capture-name)
-                                           (stringp capture-name))
-                                 (error "Improper capture name found: ~S" capture-name))
-                               (multiple-value-bind (success? newstate)
-                                                    (inner-patmatch state (cddr pattern))
-                                 (cond (success?
-                                        ;; Record the match on newstate and return newstate.
-                                        ;; Callee cannot do this because it don't know about the :capture clause it's within.
-                                        (let ((string-found (subseq (get-string newstate) ;; <-- Here's the magic. Study this and understand it.
-                                                                    (get-pos state)
-                                                                    (get-pos newstate))))
-                                          (push (if capture-name
-                                                    (cons capture-name string-found)
-                                                    string-found) ; capture name is explicitly nil (anonymous). So push just the string, not a cons.
-                                                (get-captures newstate))
-                                          (values t newstate)))
-                                       (t (values nil newstate)))))) ; we already know newstate represents a failed match,
-                            ; but it contains potentially-valuable position
-                            ; and capture information, so return it.
-                            
-                            (:not ; should contain only a single subpattern (which could itself be wrapped in another meta-pattern keyword).
+; Policy decision: meta-pattern keywords introduce new binding scopes EXCEPT for :seq and :named.
+; Primitive-pattern keywords never introduce new binding scopes because they cannot contain subpatterns.
+(defun inner-patmatch (state pattern &optional binding-scope)
+  (flet ((do-sequentially (state pattern binding-scope)
+           ; Execute car and cdr in sequence, with each seeing a (potentially) updated position in the string.
+           ; Do NOT create a new binding scope herein, because sequentially means "not nested"
+           (multiple-value-bind (success? newstate)
+                                (inner-patmatch state (car pattern) binding-scope)
+             (if success?
+                 (inner-patmatch newstate (cdr pattern) binding-scope)
+                 (values nil newstate))))
+         (ensure-binding-scope ()
+           "Ensure the local variable binding-scope contains a binding-scope, i.e. don't cons one up unless we need it."
+           (unless binding-scope
+             (setf binding-scope (new-binding-scope nil)))))
+    (if pattern
+        (cond ((stringp pattern)
+               ; syntactic sugar so pattern can be a string to be matched literally
+               (primitive-pattern-dispatch :string pattern state))
+              ((symbolp pattern) ; it's a named pattern
+               (format t "~%looking up pattern named ~S" pattern)
+               (unless binding-scope
+                 (error "Pattern named ~A encountered when no patterns (at all) have been defined" pattern))
+               (let ((named-pattern (lookup-key pattern binding-scope))) ;;; NDY should we memorize current binding-scopes along with named patterns??
+                 (if named-pattern
+                     (inner-patmatch state named-pattern binding-scope)
+                     (error "Pattern named ~A not in scope" pattern))))
+              ((consp pattern)
+               (let ((carpat (car pattern)))
+                 (cond ((keywordp carpat)
+                        ; check for meta-pattern keywords and handle them first. Meta-patterns contain other patterns.
+                        (case carpat
+                          (:seq
+                           (do-sequentially state (cdr pattern) binding-scope))
+                          
+                          (:named ; A named pattern. Useful for recursive patterns.
+                           (ensure-binding-scope)
+                           (let ((pattern-name (second pattern)))
+                             (unless (and pattern-name
+                                          (symbolp pattern-name))
+                               (error "Improper pattern name found: ~S. Must be a non-nil symbol." pattern-name))
+                             (format t "~%New named pattern ~S" pattern-name)
+                             (setf (lookup-key pattern-name binding-scope) (cddr pattern))
+                             (inner-patmatch state (cddr pattern) binding-scope)))
+                          
+                          (:capture
+                           ; second must be a symbol or string to name the capture group
+                           ; cddr is assumed to be a sequential meta-pattern
+                           (let ((capture-name (second pattern)))
+                             (unless (or (symbolp capture-name)
+                                         (stringp capture-name))
+                               (error "Improper capture name found: ~S" capture-name))
                              (multiple-value-bind (success? newstate)
-                                                  (inner-patmatch state (second pattern))
-                               (if success?
-                                   (values nil state)
-                                   (values t newstate))))
-                            
-                            (:or ; cdr of pattern will be evaluated in sequence but each evaluation starts at the same position
-                             ; Any success wins immediately.
-                             (some-match state (cdr pattern)))
-                            
-                            (:and ; cdr of pattern will be evaluated in sequence but each evaluation starts at the same position
-                             ; Any failure loses immediately.
-                             (every-match state (cdr pattern)))
-                            
-                            (:break (break) ; just for debugging patterns
-                                    (values :break state)) ; break always succeeds so we'll go to the next thing
-                            
-                            (t ; any other keyword indicates a primitive pattern
-                             (primitive-pattern-dispatch carpat
-                                                         (second pattern) ; fn
-                                                         state))))
-                         
-                         (t ; No opening keyword, so treat pattern as if it opened with :SEQ.
-                          (do-sequentially state pattern)
-                          ))))
-                (t (error "Pattern must be of type string, symbol, or cons. ~S" pattern)))
-          
-          ; pattern is empty. This is success.
-          (values t state)))))
+                                                  (do-sequentially state (cddr pattern) (new-binding-scope binding-scope))
+                               (cond (success?
+                                      ;; Record the match on newstate and return newstate.
+                                      ;; Callee cannot do this because it don't know about the :capture clause it's within.
+                                      (let ((string-found (subseq (get-string newstate) ;; <-- Here's the magic. Study this and understand it.
+                                                                  (get-pos state)
+                                                                  (get-pos newstate))))
+                                        (push (if capture-name
+                                                  (cons capture-name string-found)
+                                                  string-found) ; capture name is explicitly nil (anonymous). So push just the string, not a cons.
+                                              (get-captures newstate))
+                                        (values t newstate)))
+                                     (t (values nil newstate)))))) ; we already know newstate represents a failed match,
+                          ; but it contains potentially-valuable position
+                          ; and capture information, so return it.
+                          
+                          (:not ; should contain only a single subpattern (which could itself be wrapped in another meta-pattern keyword).
+                           (multiple-value-bind (success? newstate)
+                                                (inner-patmatch state (second pattern) (new-binding-scope binding-scope))
+                             (if success?
+                                 (values nil state)
+                                 (values t newstate))))
+                          
+                          (:or ; cdr of pattern will be evaluated in sequence but each evaluation starts at the same position
+                           ; Any success wins immediately.
+                           (some-match state (cdr pattern) (new-binding-scope binding-scope)))
+                          
+                          (:and ; cdr of pattern will be evaluated in sequence but each evaluation starts at the same position
+                           ; Any failure loses immediately.
+                           (every-match state (cdr pattern) (new-binding-scope binding-scope)))
+                          
+                          (:break (break) ; just for debugging patterns
+                                  (values :break state)) ; break always succeeds so we'll go to the next thing
+                          
+                          (t ; any other keyword indicates a primitive pattern
+                           (primitive-pattern-dispatch carpat
+                                                       (second pattern) ; fn
+                                                       state))))
+                       
+                       (t ; No opening keyword, so treat pattern as if it opened with :SEQ.
+                        (do-sequentially state pattern binding-scope)
+                        ))))
+              (t (error "Pattern must be of type string, symbol, or cons. ~S" pattern)))
+        
+        ; pattern is empty. This is success.
+        (values t state))))
 
 (defun patmatch (string pattern)
   "Returns (values t state) on success.

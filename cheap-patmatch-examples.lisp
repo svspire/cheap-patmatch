@@ -430,15 +430,18 @@ In this case "zero or more occurrences of any character but foo" means
 ;;; ---- Recursive paren matching inside the value spot
 
 (defparameter *balanced-paren-matcher*
-  `(:capture nil
-             (:one-nongreedy #\()
-             (:named paren-matcher ; paren-matcher starts AFTER #\(
-                     (:zero-or-more ,(any-char-but "()"))
-                     (:or (:one-nongreedy #\))
-                          (:seq (:one-nongreedy #\()
-                                paren-matcher
-                                (:zero-or-more ,(any-char-but ")"))
-                                (:one-nongreedy #\)))))))
+  `(:named overall
+           (:zero-or-more ,(any-char-but "("))
+           (:capture nil
+                     (:one-nongreedy #\()
+                     (:named paren-matcher ; paren-matcher starts AFTER #\(
+                             (:zero-or-more ,(any-char-but "()"))
+                             (:or (:one-nongreedy #\))
+                                  (:seq (:one-nongreedy #\()
+                                        paren-matcher
+                                        overall
+                                        (:zero-or-more ,(any-char-but ")"))
+                                        (:one-nongreedy #\))))))))
 
 (defparameter crap
   `(:capture nil
@@ -451,8 +454,8 @@ In this case "zero or more occurrences of any character but foo" means
 (ppatmatch ")" `(:capture nil
                          (:one-nongreedy #\))))
 
-(ppatmatch "((x y z))" *balanced-paren-matcher*)
-(ppatmatch "((x y z) (foo) )" *balanced-paren-matcher*)
+(ppatmatch "((x y z))" *balanced-paren-matcher*) ; success! captures ("((x y z))")
+(ppatmatch "((x y z) (foo) )" *balanced-paren-matcher*) ; success, but captures ("((x y z) (foo)") which is wrong
 
 
 (ppatmatch "(xadfqw()x" crap)
