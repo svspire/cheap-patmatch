@@ -254,8 +254,8 @@ These are the meta-pattern keywords:
   (:documentation "Strictly for named patterns. A typical binding scope data structure."))
 
 (defmethod lookup-key (key (self pattern-binding-scope))
-  (if (local-table self)
-      (gethash key (local-table self))
+  (or (and (local-table self)
+           (gethash key (local-table self)))
       (when (parent-scope self)
         (lookup-key key (parent-scope self)))))
 
@@ -273,7 +273,7 @@ These are the meta-pattern keywords:
         (setf local-table (make-pattern-binding-scope-table))) ;; don't cons up a table unless we actually need one
     (setf (gethash key local-table) newvalue)))
 
-(defun new-binding-scope (bs)
+(defun new-binding-scope (&optional bs)
   "Always returns a new binding scope whose parent is bs, which could either be another binding-scope or nil."
   (make-instance 'pattern-binding-scope
     :parent-scope bs))
@@ -292,7 +292,7 @@ These are the meta-pattern keywords:
          (ensure-binding-scope ()
            "Ensure the local variable binding-scope contains a binding-scope, i.e. don't cons one up unless we need it."
            (unless binding-scope
-             (setf binding-scope (new-binding-scope nil)))))
+             (setf binding-scope (new-binding-scope)))))
     (if pattern
         (cond ((stringp pattern)
                ; syntactic sugar so pattern can be a string to be matched literally
@@ -301,7 +301,7 @@ These are the meta-pattern keywords:
                (format t "~%looking up pattern named ~S" pattern)
                (unless binding-scope
                  (error "Pattern named ~A encountered when no patterns (at all) have been defined" pattern))
-               (let ((named-pattern (lookup-key pattern binding-scope))) ;;; NDY should we memorize current binding-scopes along with named patterns??
+               (let ((named-pattern (lookup-key pattern binding-scope))) ;;; NDY should we memorize current binding-scopes along with named patterns?? Probably
                  (if named-pattern
                      (inner-patmatch state named-pattern binding-scope)
                      (error "Pattern named ~A not in scope" pattern))))
