@@ -7,4 +7,8 @@
   (:use :cl)
   (:export
    #:patmatch
-   #:ppatmatch))
+   #:ppatmatch
+   #:whitep
+   #:non-whitep
+   #:any-char
+   #:any-char-but))
