@@ -466,7 +466,63 @@
   '(T
     ((DEFFORM . "defconstant") "foobar" (VALUE . "35") (COMMENT . "; compute foobars"))))
 
+(defparameter *balanced-paren-matcher*
+  `(:named toplevel
+           (:zero-or-more ,(any-char-but "("))
+           (:named match-parens
+                   (:capture nil
+                             ; match-parens starts with pos pointing at a #\( and should end with pos pointing one beyond #\)
+                             (:one-nongreedy #\() ; skip past the #\(
+                             (:named match-loop
+                                     (:or (:seq (:lookahead-string "(")
+                                                match-parens
+                                                match-loop)
+                                          (:one-nongreedy #\))
+                                          (:seq (:one-or-more ,(any-char-but "()"))
+                                                match-loop)))))
+           (:or (:eos) ; this just makes the first value returned (the success boolean) correct. Doesn't affect the captures.
+                toplevel))
+  "Captures all sets of balanced parens in string")
 
+(defparameter *paren-matching-tests*
+  '(
+    ("(())" .  ("()" "(())"))
+    ("(x y z)" . ("(x y z)"))
+    ("((x y z))" . ("(x y z)" "((x y z))"))
+    ("((x y z) (foo) )" . ("(x y z)" "(foo)" "((x y z) (foo) )"))
+    ("((x y z) (a b c))" . ("(x y z)" "(a b c)" "((x y z) (a b c))"))
+    ("bar" . NIL)
+    ("bar()" . ("()"))
+    ("(boo" . NIL)
+    ("(boo))" . ("(boo)"))
+    ("(boo)" . ("(boo)"))
+    ("abcdef (foo)" . ("(foo)"))
+    ("((boo) (baz))" . ("(boo)" "(baz)" "((boo) (baz))"))
+    ("((boo) (baz) (barf))" . ("(boo)" "(baz)" "(barf)" "((boo) (baz) (barf))"))
+    ("(((boo) (baz)) (barf))" . ("(boo)" "(baz)" "((boo) (baz))" "(barf)" "(((boo) (baz)) (barf))"))
+    ("(((boo)))" . ("(boo)" "((boo))" "(((boo)))"))
+    ("((boo) ((baz) ((barf))))" . ("(boo)" "(baz)" "(barf)" "((barf))" "((baz) ((barf)))" "((boo) ((baz) ((barf))))"))
+    ("((asdf)asdf)" . ("(asdf)" "((asdf)asdf)"))
+    ("(defconstant foobar 35 \"my docstring\") ; compute foobars" . ("(defconstant foobar 35 \"my docstring\")"))
+    )
+  "A-list of correct (input . output) pairs")
+
+(defun run-paren-matching-tests ()
+  (flet ((do-test (input output)
+           (multiple-value-bind (success? captures)
+                                (cpat::ppatmatch input cpat::*balanced-paren-matcher*)
+             (declare (ignore success?))
+             (unless (equalp captures output)
+               (error "Input ~S doesn't produce output ~S" input output))
+             t)))
+    (every (lambda (correctpair)
+             (do-test (car correctpair)
+                      (cdr correctpair)))
+           *paren-matching-tests*)))
+
+(lisp-unit:define-test paren-match-tests
+                        (lisp-unit:assert-true
+                         (run-paren-matching-tests)))
 
 ; (lisp-unit:run-tests :all :cheap-patmatch)
 ; (let ((lisp-unit::*use-debugger* t)) (lisp-unit:run-tests :all :cheap-patmatch))
