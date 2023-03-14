@@ -303,7 +303,9 @@ These are the meta-pattern keywords:
            (multiple-value-bind (success? newstate)
                                 (inner-patmatch state (car pattern) binding-scope)
              (if success?
-                 (inner-patmatch newstate (cdr pattern) binding-scope)
+                 (if (cdr pattern) ; minor short circuit that changes nothing semantically but it avoids a redundant recursive call
+                     (inner-patmatch newstate (cdr pattern) binding-scope)
+                     (values t newstate))
                  (values nil newstate))))
          (ensure-binding-scope ()
            "Ensure the local variable binding-scope contains a binding-scope, i.e. don't cons one up unless we need it."
