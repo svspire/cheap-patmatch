@@ -145,8 +145,23 @@
                (values nil state)))
           (t (values nil state))))) ; we're out of string but not out of pattern. This means failure.
 
+(defmethod primitive-pattern-dispatch ((kwd (eql :lookahead-string)) literal-string state)
+  "Require that current string match a literal string. Don't move pos forward in any case."
+  (let* ((pos (get-pos state))
+         (string (get-string state))
+         (len (get-string-length state))
+         (endpos (+ pos (length literal-string))))
+    (cond ((and (< pos len)
+                (<= endpos len))
+           ; keep going
+           (if (string= literal-string (subseq string pos endpos))
+               (values t state)
+               (values nil state)))
+          (t (values nil state)))))
+
 (defmethod primitive-pattern-dispatch ((kwd (eql :zero-or-more)) fn state)
-  "Require at zero or more characters at current position for which fn returns true."
+  "Require zero or more characters at current position for which fn returns true.
+   New state's pos will be one beyond the last char where the fn returned true."
   (setf fn (massage-arg-into-fn fn))
   (let ((pos (get-pos state))
         (string (get-string state))
@@ -163,7 +178,8 @@
           (t (values t state))))) ; we're out of string prematurely but for _this_ pattern it means success!
 
 (defmethod primitive-pattern-dispatch ((kwd (eql :one-or-more)) fn state)
-  "Require at least one character at current position for which fn returns true."
+  "Require at least one character at current position for which fn returns true.
+  New state's pos will be one beyond the last char where the fn returned true."
   (setf fn (massage-arg-into-fn fn))
   (let ((pos (get-pos state))
         (string (get-string state))
@@ -298,12 +314,16 @@ These are the meta-pattern keywords:
                ; syntactic sugar so pattern can be a string to be matched literally
                (primitive-pattern-dispatch :string pattern state))
               ((symbolp pattern) ; it's a named pattern
-               (format t "~%looking up pattern named ~S" pattern)
+               ;(format t "~%looking up pattern named ~S" pattern)
                (unless binding-scope
                  (error "Pattern named ~A encountered when no patterns (at all) have been defined" pattern))
                (let ((named-pattern (lookup-key pattern binding-scope))) ;;; NDY should we memorize current binding-scopes along with named patterns?? Probably
                  (if named-pattern
                      (inner-patmatch state named-pattern binding-scope)
+
+
+
+
                      (error "Pattern named ~A not in scope" pattern))))
               ((consp pattern)
                (let ((carpat (car pattern)))
@@ -319,7 +339,7 @@ These are the meta-pattern keywords:
                              (unless (and pattern-name
                                           (symbolp pattern-name))
                                (error "Improper pattern name found: ~S. Must be a non-nil symbol." pattern-name))
-                             (format t "~%New named pattern ~S" pattern-name)
+                             ;(format t "~%New named pattern ~S" pattern-name)
                              (setf (lookup-key pattern-name binding-scope) (cddr pattern))
                              (inner-patmatch state (cddr pattern) binding-scope)))
                           
@@ -365,6 +385,11 @@ These are the meta-pattern keywords:
                           (:break (break) ; just for debugging patterns
                                   (values :break state)) ; break always succeeds so we'll go to the next thing
                           
+                          (:eos ; End-of-string. Always true if we're at the end of the string.
+                           (if (>= (get-pos state) (get-string-length state))
+                               (values t state)
+                               (values nil state)))
+                                                    
                           (t ; any other keyword indicates a primitive pattern
                            (primitive-pattern-dispatch carpat
                                                        (second pattern) ; fn
