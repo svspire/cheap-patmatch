@@ -430,26 +430,71 @@ In this case "zero or more occurrences of any character but foo" means
 ;;; ---- Recursive paren matching inside the value spot
 
 (defparameter *balanced-paren-matcher*
-  `(:named overall
-           (:zero-or-more ,(any-char-but "("))
-           (:capture nil
-                     (:one-nongreedy #\()
-                     (:named paren-matcher ; paren-matcher starts AFTER #\(
-                             (:zero-or-more ,(any-char-but "()"))
-                             (:or (:one-nongreedy #\))
-                                  (:seq (:one-nongreedy #\()
-                                        paren-matcher
-                                        overall
-                                        (:zero-or-more ,(any-char-but ")"))
-                                        (:one-nongreedy #\))))))))
+  `((:named thing-that-might-contain-parens
+            (:or (:seq (:one-or-more ,(any-char-but "(")) ; string contains no "(" characters. Extra ")" don't matter here.
+                       :eos)
+                 (:capture nil
+                           (:one-nongreedy #\()
+                           (:named paren-matcher ; paren-matcher starts AFTER #\(
+                                   (:zero-or-more ,(any-char-but "()"))
+                                   (:or (:one-nongreedy #\))
+                                        (:seq (:one-nongreedy #\()
+                                              paren-matcher
+                                              thing-that-might-contain-parens
+                                              (:zero-or-more ,(any-char-but ")"))
+                                              (:one-nongreedy #\))))))))))
 
-(defparameter crap
+;;; According to https://www.php.net/manual/en/regexp.reference.recursive.php
+;;;  this is correct. But see comment.
+(defparameter *balanced-paren-matcher*
+  `((:named thing-that-might-contain-parens
+            (:or (:seq (:one-or-more ,(any-char-but "(")) ; string contains no "(" characters. Extra ")" don't matter here.
+                       :eos)
+
+                 (:named paren-matcher
+                 (:capture nil
+                           (:one-nongreedy #\()
+                           ; need following zero or more times
+                           (:or (:one-or-more ,(any-char-but "()"))
+                                paren-matcher)
+
+                           (:one-nongreedy #\))))))))
+
+;;; Tried to fix it since we don't have :zero-or-more for patterns
+(defparameter *balanced-paren-matcher*
+  `((:named paren-matcher
+                         (:capture nil
+                                   (:one-nongreedy #\()
+                                   
+                                   (:or ; need following zero :OR more times
+                                    (:named subparen-matcher
+                                            (:or (:one-or-more ,(any-char-but "()"))
+                                                 paren-matcher)
+                                            subparen-matcher)
+                                    (:one-nongreedy #\)))))))
+
+
+
+ (defparameter crap
   `(:capture nil
              (:named paren-matcher
                      (:one-nongreedy #\()
                      (:zero-or-more ,(any-char-but #\)))
                      (:one-nongreedy #\)))))
 
+(defparameter crap2
+ `((:named overall
+           (:zero-or-more ,(any-char-but "("))
+           (:capture nil
+                     (:one-nongreedy #\()
+                     (:named paren-matcher ; paren-matcher starts AFTER #\(
+                             (:zero-or-more ,(any-char-but "()"))
+                             (:or overall
+                                  (:one-nongreedy #\))))))))
+                                  
+                                  (:one-nongreedy #\()
+                                        paren-matcher
+                                        overall))))))
            
 (ppatmatch ")" `(:capture nil
                          (:one-nongreedy #\))))
@@ -459,8 +504,12 @@ In this case "zero or more occurrences of any character but foo" means
 
 
 (ppatmatch "(xadfqw()x" crap)
+(ppatmatch "(xadfqw()x" crap2)
 
 (ppatmatch "bar" *balanced-paren-matcher*)
+(ppatmatch "bar()" *balanced-paren-matcher*)
+
+(ppatmatch "(x y z)" *balanced-paren-matcher*)
 
 (ppatmatch "(((x" 
            `(:capture nil
@@ -494,3 +543,67 @@ In this case "zero or more occurrences of any character but foo" means
              (:zero-or-more whitep)
              (:capture comment
                        (:one-or-more any-char))))
+
+;;; latest 13-Mar-2023
+(defparameter *balanced-paren-matcher*
+  `(:named toplevel
+           (:zero-or-more ,(any-char-but "("))
+           (:named match-parens
+                   (:capture nil ; this capture seems to work
+                             ; match-parens starts with pos pointing at a #\( and should end with pos pointing one beyond #\)
+                             (:one-nongreedy #\() ; skip past the #\(
+                             (:named match-loop
+                                     (:or (:seq (:lookahead-string "(")
+                                                ;(:capture b ; this one doesn't work
+                                                          match-parens
+                                                          match-loop
+                                                          );)
+                                          (:one-nongreedy #\))
+                                          (:seq (:one-or-more ,(any-char-but "()"))
+                                                match-loop)))))
+           (:or (:eos)
+                toplevel)))
+
+#|
+(cpat:ppatmatch "((x y z) (a b c))" cpat::*balanced-paren-matcher*)
+ T
+ ("(a b c))" "(x y z) (a b c))" "((x y z) (a b c))")  ; very wrong
+
+(cpat:ppatmatch "(())" cpat::*balanced-paren-matcher*)
+ T
+ ("())" "(())") ; wrong. should be ("()" "(())")
+
+
+|#
+
+(defun run-paren-matching-tests ()
+  (flet ((do-test (input output)
+           (multiple-value-bind (success? captures)
+                                (cpat::ppatmatch input cpat::*balanced-paren-matcher*)
+             (declare (ignore success?))
+             (unless (equalp captures (reverse output)) ; because ppatmatch reverses output to be in chrono order
+               (error "Input ~S doesn't produce output ~S" input output))
+             t)))
+    
+    (do-test "(boo" nil)
+    (do-test "(boo))" ; unbalanced but capture will succeed
+             '("(boo)"))
+    (do-test "(boo)"
+             '("(boo)"))
+    (do-test  "abcdef (foo)"
+              '("(foo)"))
+    (do-test "((boo) (baz))"
+             '("((boo) (baz))" "(baz)" "(boo)"))
+    (do-test  "((boo) (baz) (barf))"
+              '("((boo) (baz) (barf))" "(barf)" "(baz)" "(boo)"))
+    (do-test "(((boo) (baz)) (barf))"
+             '("(((boo) (baz)) (barf))" "(barf)" "((boo) (baz))" "(baz)" "(boo)") )
+    (do-test "(((boo)))"
+             '("(((boo)))" "((boo))" "(boo)"))
+    (do-test "((boo) ((baz) ((barf))))"
+             '("((boo) ((baz) ((barf))))" "((baz) ((barf)))" "((barf))" "(barf)" "(baz)" "(boo)"))
+    (do-test "((asdf)asdf)"
+             '("((asdf)asdf)" "(asdf)"))
+    ))
+
+; (run-paren-matching-tests) ; --> t
