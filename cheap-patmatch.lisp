@@ -415,7 +415,7 @@ These are the meta-pattern keywords:
     (inner-patmatch state pattern)))
 
 (defun ppatmatch (string pattern)
-  "Pretty version patmatch. This is the primary user interface if all you care about
+  "Pretty version of patmatch. This is the primary user interface if all you care about
    is whether the match succeeded and what the captures were.
    (If you care about the position within the string where the match succeeded or failed, 
    use #'patmatch and examine the returned state object.)
