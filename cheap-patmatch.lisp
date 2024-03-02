@@ -446,7 +446,8 @@ In the below, <clause> is one of the pattern clauses.
                           (:read-token ; uses Lisp reader to read a token at current position
                            (multiple-value-bind (result newpos)
                                                        (handler-case
-                                                           (read-from-string (get-string state) t nil :start (get-pos state))
+                                                           (let ((*read-eval* nil))
+                                                             (read-from-string (get-string state) t nil :start (get-pos state)))
                                                          (error () nil))
                              (if newpos ; the read was successful. This is how we can tell the difference between a nil result and reading from the string "nil"
                                (values `(:token ,result) (copy-state state newpos))
