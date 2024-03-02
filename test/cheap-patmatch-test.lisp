@@ -33,6 +33,15 @@
 ;; (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 ;; OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+; NDY: Examples of (:not with a :seq clause).
+; NDY: Examples of (:break). Tricky to test.
+; NDY: Examples of how a literal string as a clause is like a :seq followed by individual characters.
+; NDY: Do something with *debug* below
+; NDY: Test case-insensitive matching, including with #'any-char-but
+; NDY: Test read-token capability
+; NDY: Test #'newlinep
+; NDY: Test #'anyof or get rid of it.
+
 (in-package :cheap-patmatch)
 
 (defparameter *debug* nil
@@ -63,13 +72,13 @@
 (deftest basic-match
          "(defun"
          `(:one ,(lambda (char) (char= #\( char)))
-  '(t nil))
+  '(:one nil))
 
 (deftest single-opening-paren
          "(defun"
   `(:capture opening
              (:one ,(lambda (char) (char= #\( char))))
-  '(T
+  '(:one
     ((CHEAP-PATMATCH::OPENING . "("))))
 
 (deftest single-paren-plus-d
@@ -81,7 +90,7 @@
 (deftest single-paren-plus-space
          "( defun" `((:one ,(lambda (char) (char= #\( char)))
                      (:one ,(lambda (char) (char= #\space char))))
-  '(t nil))
+  '(:one nil))
 
 (deftest single-paren-plus-two-spaces
          "(  defun"
@@ -117,6 +126,7 @@
 (deftest simple-defconstant
          "(defconstant foobar 35) ; compute foobars"
   `((:one #\()
+    (:break)
     (:zero-or-more whitep)
     (:capture defform
               (:one-or-more non-whitep))
@@ -133,7 +143,7 @@
     (:zero-or-more whitep)
     (:capture comment
               (:one-or-more any-char)))
-  '(T
+  '(:ONE-OR-MORE
     ((DEFFORM . "defconstant") (DEFNAME . "foobar") (VALUE . "35") (COMMENT . "; compute foobars"))))
 
 (deftest docstring1
@@ -159,7 +169,7 @@
     (:zero-or-more whitep)
     (:capture comment
               (:one-or-more any-char)))
-  '(T  ;  Good. Still works on original pattern and doesn't capture docstring because there isn't one.
+  '(:ONE-OR-MORE  ;  Good. Still works on original pattern and doesn't capture docstring because there isn't one.
     ((DEFFORM . "defconstant") (DEFNAME . "foobar") (VALUE . "35") (COMMENT . "; compute foobars"))))
 
 (deftest docstring2
@@ -185,7 +195,7 @@
     (:zero-or-more whitep)
     (:capture comment
               (:one-or-more any-char)))
-  '(T   ; Still works if there are spaces before the close paren
+  '(:ONE-OR-MORE   ; Still works if there are spaces before the close paren
     ((DEFFORM . "defconstant") (DEFNAME . "foobar") (VALUE . "35") (COMMENT . "; compute foobars"))))
 
 (deftest docstring3
@@ -237,7 +247,7 @@
     (:zero-or-more whitep)
     (:capture comment
               (:one-or-more any-char)))
-  '(T    ; Now it works! But it's still not quite right because final closing paren is included in comment
+  '(:ONE-OR-MORE    ; Now it works! But it's still not quite right because final closing paren is included in comment
     ((DEFFORM . "defconstant") (DEFNAME . "foobar") (VALUE . "35") (DOCSTRING . "\"my docstring\"") (COMMENT . ") ; compute foobars"))))
 
 (deftest docstring-with-seq1
@@ -265,7 +275,7 @@
     (:zero-or-more whitep)
     (:capture comment
               (:one-or-more any-char)))
-  '(T    ; Fixed! Note the comment doesn't contain the closing paren any more
+  '(:ONE-OR-MORE    ; Fixed! Note the comment doesn't contain the closing paren any more
     ((DEFFORM . "defconstant") (DEFNAME . "foobar") (VALUE . "35") (DOCSTRING . "\"my docstring\"") (COMMENT . "; compute foobars"))))
 
 ; Improve the above with less clumsy syntax for dealing with the closing quote (see comment)
@@ -294,13 +304,13 @@
     (:zero-or-more whitep)
     (:capture comment
               (:one-or-more any-char)))
-  '(T
+  '(:ONE-OR-MORE
     ((DEFFORM . "defconstant") (DEFNAME . "foobar") (VALUE . "35") (DOCSTRING . "\"my docstring\"") (COMMENT . "; compute foobars"))))
 
 (deftest basic-whitespace
          "  "
   `(:one-or-more whitep)
-  '(T
+  '(:ONE-OR-MORE
     NIL))
 
 ; Detect definition symbols at beginning of an sexp.
@@ -315,7 +325,7 @@
     (:capture body
               (:one-or-more ,(lambda (char)
                                (not (char= #\) char))))))
-  '( T
+  '(:ONE-OR-MORE
     ((DEFFORM . "defun") (BODY . " foobar 35"))))
 
 ; Like above but we don't have to spell out the keyword :string. This way is nicer.
@@ -329,7 +339,7 @@
     (:capture body
               (:one-or-more ,(lambda (char)
                                (not (char= #\) char))))))
-  '(T
+  '(:ONE-OR-MORE
     ((DEFFORM . "defun") (BODY . " foobar 35"))))
 
 ; Now search for any defining form EXCEPT "defun"
@@ -370,7 +380,7 @@
               (:and "def" ; note nice lookahead
                     (:not "defun"))
               (:one-or-more non-whitep)))
-  '(T    ; Success because we shortened the pattern. Now the overall pattern can succeed.
+  '(:ONE-OR-MORE    ; Success because we shortened the pattern. Now the overall pattern can succeed.
     ((DEFFORM . "defu"))))
 
 (deftest def&body
@@ -384,7 +394,7 @@
     (:capture body
               (:one-or-more ,(lambda (char)
                                (not (char= #\) char))))))
-  '(T
+  '(:ONE-OR-MORE
     ((DEFFORM . "defconstant") (BODY . " foobar 35"))))
 
 (deftest defmacro1
@@ -402,14 +412,14 @@
 (deftest defconstant-match
          "(defconstant foobar 35) ; process the foobars"
   `("(defconstant")
-  '(T
+  '(:STRING=
     NIL))
 
 (deftest defconstant-capture
          "(defconstant foobar 35) ; process the foobars"
   `(:capture defform
              "(defconstant")
-  '(T
+  '(:STRING=
     ((DEFFORM . "(defconstant"))))
 
 (deftest dabcdef
@@ -425,7 +435,7 @@
   `(:capture match
              (:one "xyz")
              (:zero-or-more any-char))
-  '(T
+  '(:MORE
     ((MATCH . "zdabcdef"))))
 
 (deftest zxdabcdef
@@ -433,7 +443,7 @@
   `(:capture match
              (:one-or-more "xyz")
              (:zero-or-more any-char))
-  '(T
+  '(:MORE
     ((MATCH . "zxdabcdef"))))
 
 (deftest zxdabcdef-anonymous
@@ -441,7 +451,7 @@
   `(:capture nil ; anonymous capture
              (:one-or-more "xyz")
              (:zero-or-more any-char))
-  '(T
+  '(:MORE
     ("zxdabcdef")))
 
 (deftest named-plus-anonymous
@@ -463,7 +473,7 @@
     (:zero-or-more whitep)
     (:capture comment
               (:one-or-more any-char)))
-  '(T
+  '(:ONE-OR-MORE
     ((DEFFORM . "defconstant") "foobar" (VALUE . "35") (COMMENT . "; compute foobars"))))
 
 (defparameter *balanced-paren-matcher*
@@ -525,4 +535,5 @@
                          (run-paren-matching-tests)))
 
 ; (lisp-unit:run-tests :all :cheap-patmatch)
+; (let ((lisp-unit::*print-failures* t)) (lisp-unit:run-tests :all :cheap-patmatch))
 ; (let ((lisp-unit::*use-debugger* t)) (lisp-unit:run-tests :all :cheap-patmatch))

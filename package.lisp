@@ -9,6 +9,8 @@
    #:patmatch
    #:ppatmatch
    #:whitep
+   #:hex-char-p
    #:non-whitep
    #:any-char
-   #:any-char-but))
+   #:any-char-but
+   #:anyof))
