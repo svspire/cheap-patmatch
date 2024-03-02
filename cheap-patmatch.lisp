@@ -52,7 +52,7 @@
 
 ;;; See tests for examples.
 ;;; See #'primitive-pattern-dispatch methods for primitive matching keywords and how they work.
-;;; Meta-pattern keywords are :seq, :or, :and, :not, and :break.
+;;; Meta-pattern keywords include :seq, :or, :and, :not, and :break.
 
 ;;; Note that <true> in docstrings herein simply means non-nil. It may or may not be the literal T.
 
