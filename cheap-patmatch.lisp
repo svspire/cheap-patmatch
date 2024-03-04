@@ -116,19 +116,17 @@
 (defun massage-arg-into-fn (arg)
   "If arg is a function, just return it.
    If arg is a character, return a function that matches that character.
-   If arg is a string, return a function that matches any character in that string, case-sensitively.
-   If arg is a 2-list of :case-insensitive followed by a string, it matches case-insensitively.
-   If arg is a 2-list of :case-sensitive followed by a string, it matches case-sensitively. (This is redundant to the plain string case, but it's here for completeness)."
+   If arg is a string, return a function that matches any character in that string, case-sensitively."
   (typecase arg
     (function arg)
     (symbol arg) ; assume it represents a function
     (character (lambda (char) (char= char arg)))
     (string (lambda (char) (find char arg :test #'char=)))
-    (cons (case (car arg)
-            (:case-sensitive
+    (cons (case (car arg) ;;; NDY! I don't know if these work yet.
+            (:anyof-cs
               (lambda (char)
                 (find char (second arg) :test #'char=)))
-            (:case-insensitive
+            (:anyof-ci
              (lambda (char)
                 (find char (second arg) :test #'char-equal)))))))
 
@@ -155,6 +153,24 @@
                (values :string= (copy-state state endpos))
                (values nil state)))
           (t (values nil state))))) ; we're out of string but not out of pattern. This means failure.
+
+(defmethod primitive-pattern-dispatch ((kwd (eql :case-sensitive)) literal-string state)
+  "Require that current string match a literal string case-sensitively. Syntactic sugar; same as :string."
+  (primitive-pattern-dispatch :string literal-string state))
+
+(defmethod primitive-pattern-dispatch ((kwd (eql :case-insensitive)) literal-string state)
+  "Require that current string match a literal string case-insensitively."
+  (let* ((pos (get-pos state))
+         (string (get-string state))
+         (len (get-string-length state))
+         (endpos (+ pos (length literal-string))))
+    (cond ((and (< pos len)
+                (<= endpos len))
+           ; keep going
+           (if (string-equal literal-string (subseq string pos endpos))
+               (values :string-equal (copy-state state endpos))
+               (values nil state)))
+          (t (values nil state)))))
 
 (defmethod primitive-pattern-dispatch ((kwd (eql :lookahead-string)) literal-string state)
   "Require that current string match a literal string. Don't move pos forward in any case."
@@ -253,8 +269,8 @@ In the below, <clause> is one of the pattern clauses.
                    -- A symbol, which is assumed to be a single-argument function as above.
                    -- A character, which gets turned into a function that matches just that character, case-sensitively.
                    -- <s>, which gets turned into a function that matches any character in that string, case-sensitively.
-                   -- A 2-list of (:case-insensitive <s>), which gets turned into a function that matches any character in that string, case-insensitively.
-                   -- A 2-list of (:case-sensitive <s>). This behaves exactly like the case of <s> by itself.
+                   -- A 2-list of (:anyof-ci <s>), which gets turned into a function that matches any character in that string, case-insensitively.
+                   -- A 2-list of (:anyof-cs <s>). This behaves exactly like the case of <s> by itself.
               <name> must be a symbol or the literal NIL.
               <nns>  must be a non-nil symbol.
 
