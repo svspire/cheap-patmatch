@@ -35,7 +35,7 @@ to determine what the original case of a symbol was after it's been read.
 
 Cheap-Patmatch doesn't depend on the Lisp reader (though the :read-token mechanism in the DSL lets the programmer invoke it if
 desired). It strictly deals with sequences of characters. It has lookahead and capture. The presence of lookahead means it only works
-on strings#| for now; lookahead with streams is difficult and requires more infrastructure wrapped around Lisp streams.
+on strings for now; lookahead with streams is difficult and requires more infrastructure wrapped around Lisp streams.
 
 ** Syntax
 See examples and tests for syntax.
