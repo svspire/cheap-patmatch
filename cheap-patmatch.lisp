@@ -329,6 +329,8 @@ In the below, <clause> is one of the pattern clauses.
         Each starts at same string position as previous, and updates captures where appropriate.
         If any clause fails, overall pattern fails. Has short-circuit behavior.
 
+(:eos)   -- End-of-string. Always true if we're at the end of the string.
+
 (:break) -- Throws a break. Useful for debugging. Breaks always succeed, so continuing after the break just continues.
          :or makes a special provision for :break so it won't short-circuit.
          :not makes no such provision; an enclosed (:break) just causes overall failure.
