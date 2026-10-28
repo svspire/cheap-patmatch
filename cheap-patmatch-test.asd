@@ -7,6 +7,6 @@
     :depends-on ("cheap-patmatch"
                  "lisp-unit")
   :serial t
-  :components ((:module tests
+  :components ((:module test
                         :pathname "test/"
                         :components ((:file "cheap-patmatch-test")))))
