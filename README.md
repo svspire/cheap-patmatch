@@ -1,12 +1,18 @@
 # Cheap-Patmatch for Common Lisp
 
-Cheap-patmatch is a DSL for pattern matching in Common Lisp. It's a regular expression language for text strings.
-It is not a pattern matcher for deeply-nested cons cells. In other words, it's for textual S-expressions, not for S-expressions
-that have already been parsed into memory by the Lisp reader. If you need the latter, you probably want something like [trivia](https://github.com/guicho271828/trivia).
+Cheap-patmatch is a DSL for pattern matching in Common Lisp. It's a regular
+expression language for text strings.  It is not a pattern matcher for
+deeply-nested cons cells. In other words, it's for textual S-expressions,
+not for S-expressions that have already been parsed into memory by the Lisp
+reader. If you need the latter, you probably want something like
+[trivia](https://github.com/guicho271828/trivia).
 
-Having said that, Although I wrote cheap-patmatch for mining Lisp source code, it's a general text analyzer and I've used it 
-for parsing text other than Lisp source code. This means cheap-patmatch is much like grep but with Lispy syntax to describe patterns.
-And cheap-patmatch can create recursive patterns, which are necessary for parenthesis matching. Grep cannot do this.
+Having said that, Although I wrote cheap-patmatch for mining Lisp source
+code, it's a general text analyzer and I've used it for parsing text other
+than Lisp source code. This means cheap-patmatch is much like grep but with
+Lispy syntax to describe patterns.  And cheap-patmatch can create recursive
+patterns, which are necessary for parenthesis matching. Grep cannot do
+this.
 
 ## Why did I write Cheap-Patmatch?
 
@@ -22,28 +28,38 @@ And cheap-patmatch can create recursive patterns, which are necessary for parent
 
 ## Why not just use CL-PPCRE?
 
-Mainly because I didn't know how to use it, and I figured if I wrote the thing from scratch I'd remember how to use it. Ha!
-And because I wanted to dig deeply into what was necessary to match parentheses recursively. Mission accomplished.
+Mainly because I didn't know how to use it, and I figured if I wrote the
+thing from scratch I'd remember how to use it. Ha!  And because I wanted to
+dig deeply into what was necessary to match parentheses recursively.
+Mission accomplished.
 
 ## Why not just use the Lisp reader?
 
-The Lisp reader behaves according to context: Variables such as \*read-eval\*, \*read-suppress*\, \*read-base\*, etc change what it does,
-as do read-time conditionals and packages. Package names will throw errors if they're encountered before they're defined or they have a single
-colon after them but the symbol after the colon hasn't been exported. In addition, the Lisp reader throws away too much information. Because
-it drops comments on the floor, #'read is useless for capturing comments. It also (by default) upcases all symbols so there's no way
-to determine what the original case of a symbol was after it's been read.
+The Lisp reader behaves according to context: Variables such as
+\*read-eval\*, \*read-suppress*\, \*read-base\*, etc change what it does,
+as do read-time conditionals and packages. Package names will throw errors
+if they're encountered before they're defined or they have a single colon
+after them but the symbol after the colon hasn't been exported. In
+addition, the Lisp reader throws away too much information. Because it
+drops comments on the floor, #'read is useless for capturing comments. It
+also (by default) upcases all symbols so there's no way to determine what
+the original case of a symbol was after it's been read.
 
-Cheap-Patmatch doesn't depend on the Lisp reader (though the :read-token mechanism in the DSL lets the programmer invoke it if
-desired). It strictly deals with sequences of characters. It has lookahead and capture. The presence of lookahead means it only works
-on strings for now; lookahead with streams is difficult and requires more infrastructure wrapped around Lisp streams.
+Cheap-Patmatch doesn't depend on the Lisp reader (though the :read-token
+mechanism in the DSL lets the programmer invoke it if desired). It strictly
+deals with sequences of characters. It has lookahead and capture. The
+presence of lookahead means it only works on strings for now; lookahead
+with streams is difficult and requires more infrastructure wrapped around
+Lisp streams.
 
-** Syntax
+## Syntax
 See examples and tests for syntax.
 
-** Clauses
+## Clauses
 
 These are the pattern clauses.
 In the below,
+
 - \<clause\> is one of the pattern clauses.
 - \<clause\>\* is one or more pattern clauses.
 - \<s\> must be a literal string.
@@ -58,7 +74,7 @@ In the below,
   - \<nns\>  must be a non-nil symbol.
 
 
-| \<s\> |  A solitary string can itself be a clause. In which case the characters in that string will be matched sequentially and case-insensitively. |
+| \<s\> |  A solitary string can itself be a clause. In which case the characters in that string will be matched sequentially and case-insensitively. \[this probably should say 'case-sensitively'?\] |
 |:-|:---|
 | \<nns\> | A non-nil symbol can itself be a clause, in which case it is assumed to be the name of a set of clauses previously defined with the :named construct. |
 | \(\:string \<s\>) |  Match a literal string e.g. (:string "foo"). This form is not really necessary; you can just say "foo" by itself instead. |
